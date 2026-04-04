@@ -25,6 +25,8 @@ umount /var/www/html/fs/Boombox &> /dev/null || true
 find /var/www/html -mount \( -type f -o -type l \) -print0 | xargs -0 rm
 cp -r "$SOURCE_DIR/teslausb-www/html" /var/www/
 ln -sf /teslausb/teslausb-headless-setup.log /var/www/html/
+# Legacy compatibility shim: keep archiveloop.log link for existing web UI,
+# but node service logs now live in journald (journalctl -u teslausb-node -f).
 ln -sf /mutable/archiveloop.log /var/www/html/
 ln -sf /tmp/diagnostics.txt /var/www/html/
 mkdir -p /var/www/html/TeslaCam

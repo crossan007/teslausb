@@ -707,11 +707,12 @@ function diagnose {
 
     get_usb_state
 
-    local -r archiveloopcount=$(pgrep -f archiveloop | wc -l)
-    if ((archiveloopcount <= 2))
+    if systemctl is-active --quiet teslausb-node
     then
-      echo "archiveloop is not running"
-      journalctl -u teslausb | tail -30
+      echo "teslausb-node service is running"
+    else
+      echo "teslausb-node service is not running"
+      journalctl -u teslausb-node --no-pager | tail -30
     fi
 
     local -r inodes=$(df --output=ipcent /mutable/ | sed 1d | sed 's/[^0-9]//g')
@@ -819,12 +820,12 @@ function diagnose {
       echo "no setup log found"
     fi
 
-    echo -e "====== archiveloop log ======"
-    if [ -e /mutable/archiveloop.log ]
+    echo -e "====== teslausb-node service log ======"
+    if systemctl list-unit-files | grep -q '^teslausb-node.service'
     then
-      cat /mutable/archiveloop.log
+      journalctl -u teslausb-node --no-pager || true
     else
-      echo "no archiveloop log found"
+      echo "teslausb-node.service is not installed"
     fi
 
     echo -e "====== system log ======"

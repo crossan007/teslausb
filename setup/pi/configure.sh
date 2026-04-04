@@ -773,6 +773,15 @@ function install_push_message_scripts() {
   copy_script run/send_matrix.py "$install_path"
 }
 
+function ensure_node_backend_supported_archive() {
+  if [ "${ARCHIVE_SYSTEM:-none}" != "rsync" ]
+  then
+    log_progress "STOP: TS/node backend currently supports ARCHIVE_SYSTEM=rsync only."
+    log_progress "Current ARCHIVE_SYSTEM is '${ARCHIVE_SYSTEM:-none}'."
+    exit 1
+  fi
+}
+
 function install_node_backend_runtime() {
   local app_dir=/root/teslausb-node
 
@@ -864,6 +873,7 @@ check_and_configure_sns
 install_push_message_scripts /root/bin
 
 check_archive_configs
+ensure_node_backend_supported_archive
 
 rm -f /root/teslausb.conf
 rm -rf /mutable/TeslaCam/RecentClips/event.json
