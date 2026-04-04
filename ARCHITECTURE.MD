@@ -211,6 +211,15 @@ For code under `src/`, apply these standards by default:
 
 This is a project-level requirement, not an optional style preference.
 
+### Upgrade compatibility requirements
+
+When changing runtime behavior, preserve upgrade compatibility by default:
+
+1. Existing documented behavior must continue to work after upgrade unless there is an explicit migration plan.
+2. New optional behavior must require manual configuration (opt-in) before it changes runtime behavior.
+3. If new behavior becomes the default, update project documentation in the same change set and clearly call out the behavior change.
+4. Pull requests should state whether behavior is unchanged, opt-in, or default-changed and where that is documented.
+
 ---
 
 ## 8) Quick “owner map” (fast lookup)
