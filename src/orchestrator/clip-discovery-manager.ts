@@ -105,6 +105,24 @@ export class ClipDiscoveryManager {
     await this.writeArchivedSet(archivedListPath, archivedSet);
   }
 
+  async resolveArchivedFromSource(rootPath: string, filePaths: string[]): Promise<string[]> {
+    const archived: string[] = [];
+
+    for (const relPath of filePaths) {
+      const absPath = posixPath.join(rootPath, relPath);
+      try {
+        const stats = await lstat(absPath);
+        if (!stats.isSymbolicLink()) {
+          archived.push(relPath);
+        }
+      } catch {
+        archived.push(relPath);
+      }
+    }
+
+    return archived;
+  }
+
   private async discoverCandidateSymlinks(options: ClipDiscoveryOptions): Promise<string[]> {
     const categoryConfigs: ClipCategoryConfig[] = [
       { directory: 'SavedClips', enabled: options.includeSavedclips ?? true },

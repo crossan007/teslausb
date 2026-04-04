@@ -51,13 +51,30 @@ async function main(): Promise<void> {
   discoveryLoop.discovered$
     .pipe(
       concatMap(async (discoveryResult) => {
-        const result = await orchestrator.runArchiveCycle({
-          fromPath: CLIP_DISCOVERY_ROOT,
-          files: discoveryResult.filePaths,
-        });
+        let result;
+        let cycleError: unknown;
 
-        if (!result.skipped && result.failed === 0 && discoveryResult.filePaths.length > 0) {
-          await discovery.markArchived(discoveryResult.filePaths, ARCHIVED_LIST_PATH);
+        try {
+          result = await orchestrator.runArchiveCycle({
+            fromPath: CLIP_DISCOVERY_ROOT,
+            files: discoveryResult.filePaths,
+          });
+        } catch (error) {
+          cycleError = error;
+          logger.error({ error }, 'Archive cycle failed for discovery batch');
+        }
+
+        if (discoveryResult.filePaths.length > 0 && !result?.skipped) {
+          const archivedNow = await discovery.resolveArchivedFromSource(CLIP_DISCOVERY_ROOT, discoveryResult.filePaths);
+          if (archivedNow.length > 0) {
+            await discovery.markArchived(archivedNow, ARCHIVED_LIST_PATH);
+          }
+
+          logger.info({ archivedMarked: archivedNow.length }, 'Verified archived files from source state');
+        }
+
+        if (cycleError) {
+          return;
         }
 
         logger.info({ result, discovery: discoveryResult }, 'Archive cycle completed from discovery stream');

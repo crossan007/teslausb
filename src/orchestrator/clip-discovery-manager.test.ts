@@ -123,4 +123,28 @@ describe('ClipDiscoveryManager', () => {
       '',
     ].join('\n'));
   });
+
+  it('resolves archived files only when no longer symlink-backed', async () => {
+    const workspace = await createWorkspace();
+    const rootPath = join(workspace, 'TeslaCam');
+    const targets = join(workspace, 'targets');
+
+    await createFileWithSize(join(targets, 'kept.mp4'), 130_000);
+    await createClipSymlink(rootPath, 'SavedClips/evt1/kept.mp4', join(targets, 'kept.mp4'));
+
+    await mkdir(join(rootPath, 'SavedClips', 'evt1'), { recursive: true });
+    await writeFile(join(rootPath, 'SavedClips', 'evt1', 'materialized.mp4'), Buffer.alloc(130_000));
+
+    const manager = new ClipDiscoveryManager();
+    const archived = await manager.resolveArchivedFromSource(rootPath, [
+      'SavedClips/evt1/kept.mp4',
+      'SavedClips/evt1/materialized.mp4',
+      'SavedClips/evt1/missing.mp4',
+    ]);
+
+    expect(archived).toEqual([
+      'SavedClips/evt1/materialized.mp4',
+      'SavedClips/evt1/missing.mp4',
+    ]);
+  });
 });
