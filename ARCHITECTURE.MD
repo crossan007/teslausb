@@ -613,6 +613,16 @@ Modern React, TypeScript client auto-generated from API schema, proper error bou
 
 ### Implementation Phases
 
+#### Legacy decommission policy
+
+- Migration is **not required** to be strict 1:1 file-for-file from bash/CGI to TypeScript.
+- TypeScript may consolidate or split responsibilities differently than legacy scripts.
+- A legacy file should be deleted as soon as all of the following are true:
+  - Its behavior is implemented in TypeScript and covered by tests.
+  - No runtime/setup path references it anymore.
+  - Removal does not change user-visible behavior or deployment safety.
+- Prefer deleting defunct legacy files in the same PR where replacement reaches parity.
+
 #### Phase 1: Foundation & Core Types (Weeks 1–2)
 
 **Goals:**
