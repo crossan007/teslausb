@@ -776,7 +776,7 @@ function install_push_message_scripts() {
 function install_node_runtime() {
   local nvm_dir=/opt/nvm
   local nvm_install_script=/tmp/install-nvm.sh
-  local node_version="20"
+  local node_version_candidates=(20 18 16)
 
   log_progress "Installing nvm-managed node runtime"
   apt-get -y install ca-certificates curl
@@ -799,8 +799,28 @@ function install_node_runtime() {
   # shellcheck disable=SC1090
   . "$NVM_DIR/nvm.sh"
 
-  nvm install "$node_version"
-  nvm alias default "$node_version"
+  local selected_node_version=""
+  local candidate
+  for candidate in "${node_version_candidates[@]}"
+  do
+    log_progress "Trying node runtime candidate v${candidate}"
+    if nvm install "$candidate"
+    then
+      if nvm exec "$candidate" node --version > /dev/null 2>&1
+      then
+        selected_node_version="$candidate"
+        break
+      fi
+    fi
+  done
+
+  if [ -z "$selected_node_version" ]
+  then
+    log_progress "STOP: failed to install a compatible node runtime via nvm"
+    exit 1
+  fi
+
+  nvm alias default "$selected_node_version"
 
   local node_path
   local npm_path
