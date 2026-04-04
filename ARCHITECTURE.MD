@@ -200,6 +200,17 @@ If introducing new runtime scripts, follow those same patterns first before addi
 4. If setup behavior changes, test both fresh setup and upgrade path (`setup-teslausb upgrade/install`).
 5. For runtime changes, check logs in `/mutable/archiveloop.log` and service status for `teslausb.service`.
 
+### TypeScript coding standards
+
+For code under `src/`, apply these standards by default:
+
+1. Add TSDoc comments to all functions (including private helpers and exported APIs).
+2. Add TSDoc comments to significant variables (for example: constants that encode behavior, non-obvious state holders, and values with units/constraints).
+3. Keep comments brief and accurate; prefer one or two clear sentences over long narrative text.
+4. If intent is obvious from naming and type alone, skip variable comments; when in doubt, document it.
+
+This is a project-level requirement, not an optional style preference.
+
 ---
 
 ## 8) Quick “owner map” (fast lookup)
