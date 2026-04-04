@@ -867,6 +867,7 @@ video {
         <div class="status_drives"></div>
         <div class="status_space"></div>
         <div class="status_snapshots"></div>
+        <div class="status_sync"></div>
         <div class="status_ether">
           <span>Ethernet:
             <span class="status_ether_info">&ZeroWidthSpace;</span>
@@ -1745,6 +1746,31 @@ function showstatus() {
         snaps += ")";
       }
       drivesdiv.innerText = snaps;
+
+      var syncdiv = document.querySelector(".status_sync");
+      var synctext = "Sync backlog: ";
+      if (statusvals.sync_queue_files > 0) {
+        synctext += statusvals.sync_queue_files + " file(s)";
+        if (statusvals.sync_queue_events > 0) {
+          synctext += " across " + statusvals.sync_queue_events + " event(s)";
+        }
+        if (statusvals.sync_queue_oldest_age_sec > 0) {
+          synctext += ", oldest pending age " + uptimeString(statusvals.sync_queue_oldest_age_sec);
+        }
+      } else {
+        synctext += "caught up";
+      }
+      if (statusvals.sync_state == "archiving") {
+        synctext += " (archiving now)";
+      }
+      if (statusvals.sync_last_result != "never") {
+        synctext += " | last run: " + statusvals.sync_last_result;
+        if (statusvals.sync_last_duration_sec > 0) {
+          synctext += " in " + uptimeString(statusvals.sync_last_duration_sec);
+        }
+      }
+      syncdiv.innerText = synctext;
+
       var etherdiv = document.querySelector(".status_ether");
       if (statusvals.ether_speed == "") {
         etherdiv.style.display="none";

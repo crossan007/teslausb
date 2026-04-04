@@ -46,6 +46,28 @@ fi
 
 read -r -d ' ' ut < /proc/uptime
 
+sync_state=idle
+sync_queue_files=0
+sync_queue_events=0
+sync_queue_oldest_age_sec=0
+sync_last_start_epoch=0
+sync_last_end_epoch=0
+sync_last_duration_sec=0
+sync_last_result=never
+if [ -r /mutable/sync_status ]
+then
+  # shellcheck disable=SC1091
+  source /mutable/sync_status
+  sync_state=${SYNC_STATE:-$sync_state}
+  sync_queue_files=${SYNC_QUEUE_FILES:-$sync_queue_files}
+  sync_queue_events=${SYNC_QUEUE_EVENTS:-$sync_queue_events}
+  sync_queue_oldest_age_sec=${SYNC_QUEUE_OLDEST_AGE_SEC:-$sync_queue_oldest_age_sec}
+  sync_last_start_epoch=${SYNC_LAST_START_EPOCH:-$sync_last_start_epoch}
+  sync_last_end_epoch=${SYNC_LAST_END_EPOCH:-$sync_last_end_epoch}
+  sync_last_duration_sec=${SYNC_LAST_DURATION_SEC:-$sync_last_duration_sec}
+  sync_last_result=${SYNC_LAST_RESULT:-$sync_last_result}
+fi
+
 cat << EOF
 HTTP/1.0 200 OK
 Content-type: application/json
@@ -58,6 +80,14 @@ Content-type: application/json
    $(eval "$(stat --file-system --format='echo -e \"total_space\": \"$((%b*%S))\",\\\n\ \ \ \"free_space\": \"$((%f*%S))\",' /backingfiles/.)")
    "uptime": "$ut",
    "drives_active": "$drives_active",
+  "sync_state": "$sync_state",
+  "sync_queue_files": $sync_queue_files,
+  "sync_queue_events": $sync_queue_events,
+  "sync_queue_oldest_age_sec": $sync_queue_oldest_age_sec,
+  "sync_last_start_epoch": $sync_last_start_epoch,
+  "sync_last_end_epoch": $sync_last_end_epoch,
+  "sync_last_duration_sec": $sync_last_duration_sec,
+  "sync_last_result": "$sync_last_result",
    "wifi_ssid": "$wifi_ssid",
    "wifi_freq": "$wifi_freq",
    "wifi_strength": "$wifi_strength",

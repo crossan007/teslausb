@@ -10,6 +10,12 @@ fi
 modprobe -r g_ether
 
 export LOG_FILE=/mutable/archiveloop.log
+export SYNC_STATUS_FILE=/mutable/sync_status
+
+SYNC_LAST_START_EPOCH=0
+SYNC_LAST_END_EPOCH=0
+SYNC_LAST_DURATION_SEC=0
+SYNC_LAST_RESULT=never
 
 function log () {
   echo "$( date ):" "$@" >> "$LOG_FILE"
@@ -20,6 +26,73 @@ function log () {
     mv "$log_file2" "$LOG_FILE"
     log "(log truncated)"
   fi
+}
+
+function write_sync_status () {
+  local state="$1"
+  local queue_files="$2"
+  local queue_events="$3"
+  local queue_oldest_age="$4"
+
+  local tmp_file="${SYNC_STATUS_FILE}.tmp"
+  cat > "$tmp_file" << EOF
+SYNC_STATE=$state
+SYNC_QUEUE_FILES=$queue_files
+SYNC_QUEUE_EVENTS=$queue_events
+SYNC_QUEUE_OLDEST_AGE_SEC=$queue_oldest_age
+SYNC_LAST_START_EPOCH=$SYNC_LAST_START_EPOCH
+SYNC_LAST_END_EPOCH=$SYNC_LAST_END_EPOCH
+SYNC_LAST_DURATION_SEC=$SYNC_LAST_DURATION_SEC
+SYNC_LAST_RESULT=$SYNC_LAST_RESULT
+EOF
+  mv "$tmp_file" "$SYNC_STATUS_FILE"
+}
+
+function oldest_age_from_file_list () {
+  local mount_root="$1"
+  local file_list="$2"
+  local mode="${3:-all}"
+
+  local oldest=0
+  local line
+  while read -r line
+  do
+    if [ "$mode" = "pending" ] && [[ ! -L "$mount_root/$line" ]]
+    then
+      continue
+    fi
+    if [ ! -e "$mount_root/$line" ]
+    then
+      continue
+    fi
+
+    local ts
+    ts=$(stat --format='%Y' "$mount_root/$line" 2> /dev/null || true)
+    if [ -z "$ts" ]
+    then
+      continue
+    fi
+
+    if [ "$oldest" -eq 0 ] || [ "$ts" -lt "$oldest" ]
+    then
+      oldest="$ts"
+    fi
+  done < "$file_list"
+
+  if [ "$oldest" -eq 0 ]
+  then
+    echo 0
+    return
+  fi
+
+  local now
+  now=$(date +%s)
+  local age=$((now - oldest))
+  if [ "$age" -lt 0 ]
+  then
+    age=0
+  fi
+  echo "$age"
 }
 
 function log_errors_on_exit {
@@ -512,6 +585,7 @@ function archive_teslacam_clips () {
   local -r sentry_event_count=$(grep 'SentryClips/' < "$sentrylist" | sed 's/[^\/]\+$//' | sort -u  | wc -l)
 
   local -r event_count=$((saved_event_count + sentry_event_count))
+  local -r oldest_pending_age_sec=$(oldest_age_from_file_list "$overlaymerged" "$sentrylist")
 
   log "There are $event_count event folder(s) with $sentry_count file(s) and $trackmode_count track mode file(s) to move." \
       " $ignore_count short recording(s) will be skipped."
@@ -519,6 +593,9 @@ function archive_teslacam_clips () {
   local archive_success=true
   if [[ "$total_count" -gt 0 ]]
   then
+    SYNC_LAST_START_EPOCH=$(date +%s)
+    write_sync_status archiving "$total_count" "$event_count" "$oldest_pending_age_sec"
+
     log "Starting recording archiving"
     local -r start_ts=$(date --utc --date "now" +%s)
 
@@ -613,6 +690,15 @@ function archive_teslacam_clips () {
     fi
     local -r end_ts=$(date --utc --date "now" +%s)
     local -r delta=$((end_ts - start_ts))
+    SYNC_LAST_END_EPOCH=$end_ts
+    SYNC_LAST_DURATION_SEC=$delta
+    if [ "$archive_success" = "true" ]
+    then
+      SYNC_LAST_RESULT=success
+    else
+      SYNC_LAST_RESULT=error
+    fi
+
     message+=" in $(convert_seconds_to_nice_time $delta)"
     /root/bin/send-push-message "$NOTIFICATION_TITLE:" "${message}" finish
 
@@ -622,6 +708,24 @@ function archive_teslacam_clips () {
       rm /tmp/archive-error.log
     fi
   fi
+
+  local -i remaining_count=0
+  local line
+  while read -r line
+  do
+    if [[ -L "$overlaymerged/$line" ]]
+    then
+      remaining_count=$((remaining_count + 1))
+    fi
+  done < "$sentrylist"
+
+  local remaining_oldest_age_sec=0
+  if [ "$remaining_count" -gt 0 ]
+  then
+    remaining_oldest_age_sec=$(oldest_age_from_file_list "$overlaymerged" "$sentrylist" pending)
+  fi
+
+  write_sync_status idle "$remaining_count" 0 "$remaining_oldest_age_sec"
 
   # overlayfs behavior is undefined if the lower is changed while the overlay is active, so umount first
   umount "$overlaymerged"
@@ -834,6 +938,8 @@ export -f log
 
 echo "==============================================" >> "$LOG_FILE"
 log "Starting archiveloop at $(awk '{print $1}' /proc/uptime) seconds uptime..."
+
+write_sync_status idle 0 0 0
 
 set_sys_param /proc/sys/vm/dirty_background_bytes DIRTY_BACKGROUND_BYTES 65536
 set_sys_param /proc/sys/vm/dirty_ratio DIRTY_RATIO 80

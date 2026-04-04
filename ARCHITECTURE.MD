@@ -214,3 +214,15 @@ If introducing new runtime scripts, follow those same patterns first before addi
 - **Notification fan-out:** `run/send-push-message`
 
 If you are unsure where to start, begin at `run/archiveloop` and trace outward to whichever helper it calls for your feature area.
+
+---
+
+## 9) Sync status indicators (backlog/lag)
+
+Current sync lag indicators are implemented through a small status pipeline:
+
+1. `run/archiveloop` computes queue/lag metrics during archive passes and writes `/mutable/sync_status`.
+2. `teslausb-www/html/cgi-bin/status.sh` reads `/mutable/sync_status` and includes fields in its JSON response.
+3. `teslausb-www/html/index.html` renders those values in the status panel (`.status_sync`).
+
+If you want to add more “how far behind” indicators, this is the preferred extension path.
