@@ -226,3 +226,161 @@ Current sync lag indicators are implemented through a small status pipeline:
 3. `teslausb-www/html/index.html` renders those values in the status panel (`.status_sync`).
 
 If you want to add more “how far behind” indicators, this is the preferred extension path.
+---
+
+## 10) Live testing & deployment workflow
+
+### Quick orientation
+
+When you make changes to TeslaUSB, you test them on a live car instance by:
+
+1. Pushing your changes to a Git branch in your fork.
+2. Configuring the car's device to pull from your fork/branch.
+3. Running the official upgrade path (`setup-teslausb upgrade`).
+4. Validating changes with live sync tests and log inspection.
+5. Rolling back if needed by reverting config and re-running upgrade.
+
+This mimics the production flow and catches integration issues early.
+
+### Step 1: Prepare a test branch locally
+
+```bash
+# Make your changes in a feature branch (not main)
+git checkout -b my-feature
+# ... edit files ...
+git add .
+git commit -m "Add lag indicators to archiveloop"
+git push -u origin my-feature
+```
+
+### Step 2: Configure the car device for your branch
+
+SSH into your car's Pi and edit the config file:
+
+```bash
+ssh root@teslausb.lan
+sudo -i
+nano /root/teslausb_setup_variables.conf
+```
+
+Add or update these lines to point to your fork:
+
+```bash
+export REPO=your-github-username
+export BRANCH=my-feature
+```
+
+Save and exit.
+
+### Step 3: Run the upgrade (safe path)
+
+The official upgrade process handles all state transitions safely:
+
+```bash
+/root/bin/setup-teslausb upgrade
+```
+
+**What this does:**
+- Downloads your branch tarball from GitHub.
+- Stops the running `teslausb.service` and related helpers.
+- Validates configuration.
+- Installs/updates all scripts and system configuration.
+- Re-enables and restarts services.
+- Preserves all backingfiles and user data under `/backingfiles/` and `/mutable/`.
+
+**Why not manual file copies?**
+Because the upgrade path properly handles:
+- Service lifecycle (stop → reconfigure → start).
+- Systemd unit updates.
+- Backend/archive module selection/validation.
+- Environment variable migrations.
+- Concurrent script protection (flock guards).
+
+### Step 4: Validate your changes
+
+**Check service health:**
+
+```bash
+systemctl status teslausb --no-pager
+# should show: Active (running)
+
+# view recent log output
+tail -n 50 /mutable/archiveloop.log
+```
+
+**For runtime changes (like sync indicators), test a forced sync cycle:**
+
+```bash
+# while parked at home with archive reachable:
+# Option A: click "Trigger archive/sync" in web UI
+# Option B: command line:
+touch /tmp/archive_is_unreachable  # persuade device archive is unreachable
+sleep 5
+rm /tmp/archive_is_unreachable     # suddenly reachable again (triggers sync)
+
+# watch logs in real-time:
+tail -f /mutable/archiveloop.log
+```
+
+**Check new metrics live:**
+
+```bash
+# for sync status indicator feature:
+cat /mutable/sync_status
+curl -s http://localhost/cgi-bin/status.sh | jq '.sync_*'
+```
+
+**Verify via web UI:**
+
+Open http://teslausb.lan (or IP address) and check:
+- Dashboard status panel for your new indicators.
+- "Archiveloop log" tab for errors/warnings.
+- "Diagnostics" tab for full system health.
+
+### Step 5: Rollback (if needed)
+
+If something breaks:
+
+```bash
+ssh root@teslausb.lan
+sudo -i
+nano /root/teslausb_setup_variables.conf
+
+# Revert to stable:
+export REPO=marcone
+export BRANCH=main-dev
+
+# Run upgrade again
+/root/bin/setup-teslausb upgrade
+
+# verify service restarted:
+systemctl status teslausb
+tail -n 20 /mutable/archiveloop.log
+```
+
+### Testing checklist
+
+Before declaring a change "ready," verify:
+
+- [ ] Shell scripts pass syntax check: `bash -n run/archiveloop` (or affected files).
+- [ ] Service starts cleanly: `systemctl status teslausb` shows `Active (running)`.
+- [ ] Archiveloop log has no new errors: `grep -i error /mutable/archiveloop.log | tail -20`.
+- [ ] Expected behavior observed in a real sync cycle (parked at home, trigger sync).
+- [ ] Web UI displays any new indicators without JS errors (browser console).
+- [ ] Rollback path works (revert branch, upgrade again, verify rollback completes).
+
+### Common pitfalls
+
+1. **Editing files directly on device** (without re-running upgrade) → changes are lost on reboot or next upgrade.
+2. **Not waiting for archiveloop to settle** → logs can be misleading during startup; wait 30–60 seconds before checking status.
+3. **Testing while away from home** → if archive is unreachable, archiveloop won't test the archive/sync code paths.
+4. **Forgetting both `REPO` and `BRANCH`** → upgrade will silently use defaults; check `/root/teslausb_setup_variables.conf` before/after upgrade.
+
+### Advanced: Staged testing
+
+For large changes, consider:
+
+1. **Develop locally** → run tests against code (static lint, unit tests if applicable).
+2. **Test in a "none" archive mode** → on the car, with `ARCHIVE_SYSTEM=none`, sync logic runs but no data leaves device.
+3. **Single-backend test** → if adding multi-backend support, test one backend thoroughly before others.
+4. **Dogfood before release** → run your branch on your own car for a week before opening a PR.
