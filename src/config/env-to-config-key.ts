@@ -1,3 +1,7 @@
+/**
+ * Legacy lineage:
+ * - setup/pi/envsetup.sh (ENV var names and compatibility mapping)
+ */
 export const ENV_TO_CONFIG_KEY: Record<string, string> = {
   ARCHIVE_SYSTEM: 'archiveSystem',
   RSYNC_SERVER: 'rsyncServer',

@@ -1,3 +1,7 @@
+/**
+ * Legacy lineage:
+ * - setup/pi/envsetup.sh (boolean feature flags in shell environment)
+ */
 export const BOOLEAN_ENV_KEYS = new Set([
   'ARCHIVE_SAVEDCLIPS',
   'ARCHIVE_SENTRYCLIPS',

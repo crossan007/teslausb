@@ -1,3 +1,7 @@
+/**
+ * Legacy lineage:
+ * - teslausb-www/html/cgi-bin/status.sh (system status and diagnostics response surface)
+ */
 import { logger } from './logger';
 import { SystemStatus } from '../types';
 

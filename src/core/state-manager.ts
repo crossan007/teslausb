@@ -1,3 +1,9 @@
+/**
+ * Legacy lineage:
+ * - run/archiveloop (/mutable/sync_status and runtime state updates)
+ * - run/make_snapshot.sh and run/release_snapshot.sh (snapshot metadata/state)
+ * - teslausb-www/html/cgi-bin/status.sh (consumption of state files for status output)
+ */
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { dirname } from 'path';
 import { logger } from './logger';

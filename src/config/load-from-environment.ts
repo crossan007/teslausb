@@ -1,3 +1,7 @@
+/**
+ * Legacy lineage:
+ * - setup/pi/envsetup.sh (environment variable loading and normalization)
+ */
 import { ENV_TO_CONFIG_KEY } from './env-to-config-key';
 import { parseTypedValue } from './parse-typed-value';
 

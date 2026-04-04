@@ -1,3 +1,7 @@
+/**
+ * Legacy lineage:
+ * - setup/pi/envsetup.sh (shell-string to typed runtime value conversion)
+ */
 import { BOOLEAN_ENV_KEYS } from './boolean-env-keys';
 import { NUMERIC_ENV_KEYS } from './numeric-env-keys';
 

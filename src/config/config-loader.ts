@@ -1,3 +1,8 @@
+/**
+ * Legacy lineage:
+ * - setup/pi/envsetup.sh (configuration sourcing from /root/teslausb_setup_variables.conf)
+ * - setup/pi/configure.sh (configuration validation and backend selection inputs)
+ */
 import { readFileSync } from 'fs';
 import { logger } from '../core/logger';
 import { ConfigSchema, TeslaUSBConfig } from '../types';
