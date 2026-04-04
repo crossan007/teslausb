@@ -5,3 +5,4 @@
 *.iws
 .idea/
 node_modules/*
+dist/*
