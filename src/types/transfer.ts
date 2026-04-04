@@ -38,3 +38,10 @@ export const TransferSessionSchema = z.object({
 });
 
 export type TransferSession = z.infer<typeof TransferSessionSchema>;
+
+export function cloneTransferSession(session: TransferSession): TransferSession {
+  return {
+    ...session,
+    files: session.files.map((file) => ({ ...file })),
+  };
+}

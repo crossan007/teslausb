@@ -86,9 +86,12 @@ describe('RsyncBackend', () => {
 
     const sessions: TransferSession[] = [];
 
-    const result = await backend.archiveClips('/mnt/cam', ['SavedClips/a.mp4', 'SavedClips/b.mp4'], {
-      onProgress: (session) => sessions.push(session),
+    const transfer = backend.archiveClips('/mnt/cam', ['SavedClips/a.mp4', 'SavedClips/b.mp4']);
+    const subscription = transfer.session$.subscribe((session: TransferSession) => {
+      sessions.push(session);
     });
+    const result = await transfer.result;
+    subscription.unsubscribe();
 
     expect(result.archived).toBe(2);
     expect(result.failed).toBe(0);
@@ -112,7 +115,7 @@ describe('RsyncBackend', () => {
       { tempRootDir: '/tmp' },
     );
 
-    const result = await backend.archiveClips('/mnt/cam', ['SavedClips/a.mp4']);
+    const result = await backend.archiveClips('/mnt/cam', ['SavedClips/a.mp4']).result;
     expect(result.archived).toBe(1);
   });
 
@@ -127,6 +130,6 @@ describe('RsyncBackend', () => {
       { tempRootDir: '/tmp' },
     );
 
-    await expect(backend.archiveClips('/mnt/cam', ['SavedClips/a.mp4'])).rejects.toThrow('rsync failed hard');
+    await expect(backend.archiveClips('/mnt/cam', ['SavedClips/a.mp4']).result).rejects.toThrow('rsync failed hard');
   });
 });

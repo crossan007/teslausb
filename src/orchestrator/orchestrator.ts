@@ -79,19 +79,24 @@ export class Orchestrator {
     try {
       await this.backend.connect();
 
-      const result = await this.backend.archiveClips(input.fromPath, input.files, {
-        onProgress: (session) => {
-          this.stateSink?.writeTransferSession?.(session);
-        },
+      const transfer = this.backend.archiveClips(input.fromPath, input.files);
+      const subscription = transfer.session$.subscribe((session: TransferSession) => {
+        this.stateSink?.writeTransferSession?.(session);
       });
-      cycleResult = {
-        skipped: false,
-        archived: result.archived,
-        failed: result.failed,
-      };
 
-      this.recordCycle('idle', startEpoch, startedAt, cycleResult, result.failed === 0);
-      return cycleResult;
+      try {
+        const result = await transfer.result;
+        cycleResult = {
+          skipped: false,
+          archived: result.archived,
+          failed: result.failed,
+        };
+
+        this.recordCycle('idle', startEpoch, startedAt, cycleResult, result.failed === 0);
+        return cycleResult;
+      } finally {
+        subscription.unsubscribe();
+      }
     } catch (error) {
       logger.error({ error }, 'Archive cycle failed');
       cycleResult = {

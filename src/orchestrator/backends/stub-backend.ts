@@ -7,7 +7,7 @@
  *
  * These stubs preserve the script contract surface during Phase 2 dry-run mode.
  */
-import { ArchiveBackend } from '../../types';
+import { ArchiveBackend, ArchiveTransferExecution, createCompletedTransferExecution } from '../../types';
 
 export class StubArchiveBackend implements ArchiveBackend {
   name: string;
@@ -33,11 +33,11 @@ export class StubArchiveBackend implements ArchiveBackend {
     return;
   }
 
-  async archiveClips(_fromPath: string, filePaths: string[]): Promise<{ archived: number; failed: number; errors?: string[] }> {
-    return {
+  archiveClips(_fromPath: string, filePaths: string[]): ArchiveTransferExecution {
+    return createCompletedTransferExecution(this.name, filePaths, {
       archived: filePaths.length,
       failed: 0,
-    };
+    });
   }
 
   async disconnect(): Promise<void> {

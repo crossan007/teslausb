@@ -1,14 +1,57 @@
+import { Observable, ReplaySubject } from 'rxjs';
 import { TransferSession } from './transfer';
 
 export interface ArchiveTransferOptions {
   sessionId?: string;
-  onProgress?: (session: TransferSession) => void;
 }
 
 export interface ArchiveTransferResult {
   archived: number;
   failed: number;
   errors?: string[];
+}
+
+export interface ArchiveTransferExecution {
+  session$: Observable<TransferSession>;
+  result: Promise<ArchiveTransferResult>;
+}
+
+export function createCompletedTransferExecution(
+  backend: string,
+  filePaths: string[],
+  result: ArchiveTransferResult,
+  sessionId = `${backend}-${Date.now()}`,
+): ArchiveTransferExecution {
+  const now = Date.now();
+  const subject = new ReplaySubject<TransferSession>(1);
+
+  subject.next({
+    sessionId,
+    backend,
+    phase: result.failed > 0 ? 'failed' : 'completed',
+    filesTotal: filePaths.length,
+    filesCompleted: result.archived,
+    filesFailed: result.failed,
+    batchPercent: filePaths.length === 0 ? 100 : result.failed > 0 ? undefined : 100,
+    bytesTransferred: 0,
+    startedAt: now,
+    updatedAt: now,
+    completedAt: now,
+    files: filePaths.map((path) => ({
+      path,
+      status: result.failed > 0 ? 'failed' : 'completed',
+      bytesTransferred: 0,
+      percent: result.failed > 0 ? undefined : 100,
+      updatedAt: now,
+      error: result.failed > 0 ? 'transfer_failed' : undefined,
+    })),
+  });
+  subject.complete();
+
+  return {
+    session$: subject.asObservable(),
+    result: Promise.resolve(result),
+  };
 }
 
 /**
@@ -43,7 +86,7 @@ export interface ArchiveBackend {
     fromPath: string, // Source mount path
     filePaths: string[], // Relative paths to archive
     options?: ArchiveTransferOptions,
-  ): Promise<ArchiveTransferResult>;
+  ): ArchiveTransferExecution;
 
   /**
    * Copy music from source to music archive.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ArchiveBackend, SyncStatus, OperationResult } from '../types';
+import { ArchiveBackend, ArchiveTransferExecution, SyncStatus, OperationResult, createCompletedTransferExecution } from '../types';
 import { Orchestrator, StateSink } from './orchestrator';
 
 class MockBackend implements ArchiveBackend {
@@ -22,12 +22,22 @@ class MockBackend implements ArchiveBackend {
     this.connectCalls += 1;
   }
 
-  async archiveClips(_fromPath: string, filePaths: string[]): Promise<{ archived: number; failed: number }> {
+  archiveClips(_fromPath: string, filePaths: string[]): ArchiveTransferExecution {
     this.archiveCalls += 1;
-    if (this.failArchive) {
-      throw new Error('archive failed');
-    }
-    return { archived: filePaths.length, failed: 0 };
+    const result = (async () => {
+      if (this.failArchive) {
+        throw new Error('archive failed');
+      }
+      return { archived: filePaths.length, failed: 0 };
+    })();
+
+    return {
+      session$: createCompletedTransferExecution(this.name, filePaths, {
+        archived: this.failArchive ? 0 : filePaths.length,
+        failed: this.failArchive ? filePaths.length : 0,
+      }, 'mock-session').session$,
+      result,
+    };
   }
 
   async disconnect(): Promise<void> {
@@ -38,6 +48,7 @@ class MockBackend implements ArchiveBackend {
 class InMemoryStateSink implements StateSink {
   statuses: SyncStatus[] = [];
   results: OperationResult<any>[] = [];
+  transfers = 0;
 
   writeSyncStatus(status: SyncStatus): void {
     this.statuses.push(status);
@@ -45,6 +56,10 @@ class InMemoryStateSink implements StateSink {
 
   writeOperationResult(_operation: string, result: OperationResult<any>): void {
     this.results.push(result);
+  }
+
+  writeTransferSession(): void {
+    this.transfers += 1;
   }
 }
 
@@ -65,6 +80,7 @@ describe('Orchestrator', () => {
     expect(backend.archiveCalls).toBe(1);
     expect(backend.disconnectCalls).toBe(1);
     expect(state.results).toHaveLength(1);
+    expect(state.transfers).toBeGreaterThan(0);
     expect(state.results[0].success).toBe(true);
   });
 

@@ -9,12 +9,16 @@
 import { rm, mkdtemp, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { ReplaySubject } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
 import {
   ArchiveBackend,
+  ArchiveTransferExecution,
   ArchiveTransferOptions,
   ArchiveTransferResult,
   TeslaUSBConfig,
+  cloneTransferSession,
+  createCompletedTransferExecution,
   TransferFileProgress,
   TransferSession,
 } from '../../types';
@@ -55,68 +59,85 @@ export class RsyncBackend implements ArchiveBackend {
     return;
   }
 
-  async archiveClips(fromPath: string, filePaths: string[], options?: ArchiveTransferOptions): Promise<ArchiveTransferResult> {
+  archiveClips(fromPath: string, filePaths: string[], options?: ArchiveTransferOptions): ArchiveTransferExecution {
     const { rsyncServer, rsyncUser, rsyncPath } = this.requireConfig();
 
     if (filePaths.length === 0) {
-      return { archived: 0, failed: 0 };
+      return createCompletedTransferExecution(this.name, filePaths, { archived: 0, failed: 0 }, options?.sessionId);
     }
 
     const session = this.createTransferSession(filePaths, options?.sessionId);
-    this.emitProgress(session, options);
+    const subject = new ReplaySubject<TransferSession>(1);
+    this.emitProgress(subject, session);
 
-    const tempDir = await mkdtemp(join(this.options.tempRootDir ?? tmpdir(), 'teslausb-rsync-'));
-    const fileListPath = join(tempDir, 'files-from.txt');
+    const result = (async (): Promise<ArchiveTransferResult> => {
+      const tempDir = await mkdtemp(join(this.options.tempRootDir ?? tmpdir(), 'teslausb-rsync-'));
+      const fileListPath = join(tempDir, 'files-from.txt');
 
-    try {
-      await writeFile(fileListPath, `${filePaths.join('\n')}\n`, 'utf-8');
+      try {
+        await writeFile(fileListPath, `${filePaths.join('\n')}\n`, 'utf-8');
 
-      const result = await this.commandRunner.runStreaming('rsync', [
-        '-avhRL',
-        '--timeout=60',
-        '--remove-source-files',
-        '--no-perms',
-        '--omit-dir-times',
-        '--stats',
-        '--info=progress2,name',
-        '--ignore-missing-args',
-        `--files-from=${fileListPath}`,
-        fromPath,
-        `${rsyncUser}@${rsyncServer}:${rsyncPath}`,
-      ], {
-        onStdoutLine: (line) => {
-          this.handleProgressLine(line, session, options);
-        },
-        onStderrLine: (line) => {
-          this.handleProgressLine(line, session, options);
-        },
-      });
+        const commandResult = await this.commandRunner.runStreaming('rsync', [
+          '-avhRL',
+          '--timeout=60',
+          '--remove-source-files',
+          '--no-perms',
+          '--omit-dir-times',
+          '--stats',
+          '--info=progress2,name',
+          '--ignore-missing-args',
+          `--files-from=${fileListPath}`,
+          fromPath,
+          `${rsyncUser}@${rsyncServer}:${rsyncPath}`,
+        ], {
+          onStdoutLine: (line) => {
+            this.handleProgressLine(line, session, subject);
+          },
+          onStderrLine: (line) => {
+            this.handleProgressLine(line, session, subject);
+          },
+        });
 
-      if (result.code !== 0 && result.code !== 24) {
-        session.phase = 'failed';
-        session.filesFailed = Math.max(filePaths.length - session.filesCompleted, 1);
+        if (commandResult.code !== 0 && commandResult.code !== 24) {
+          session.phase = 'failed';
+          session.filesFailed = Math.max(filePaths.length - session.filesCompleted, 1);
+          session.updatedAt = Date.now();
+          session.completedAt = session.updatedAt;
+          this.markCurrentFileFailed(session, commandResult.stderr || commandResult.stdout || 'rsync failed');
+          this.emitProgress(subject, session);
+          throw new Error(commandResult.stderr || commandResult.stdout || `rsync failed with exit code ${commandResult.code}`);
+        }
+
+        this.markAllRemainingFilesCompleted(session);
+        session.phase = 'completed';
+        session.batchPercent = 100;
         session.updatedAt = Date.now();
         session.completedAt = session.updatedAt;
-        this.markCurrentFileFailed(session, result.stderr || result.stdout || 'rsync failed');
-        this.emitProgress(session, options);
-        throw new Error(result.stderr || result.stdout || `rsync failed with exit code ${result.code}`);
+        session.currentFilePath = undefined;
+        this.emitProgress(subject, session);
+
+        return {
+          archived: filePaths.length,
+          failed: 0,
+        };
+      } finally {
+        await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
       }
+    })();
 
-      this.markAllRemainingFilesCompleted(session);
-      session.phase = 'completed';
-      session.batchPercent = 100;
-      session.updatedAt = Date.now();
-      session.completedAt = session.updatedAt;
-      session.currentFilePath = undefined;
-      this.emitProgress(session, options);
+    void result.then(
+      () => {
+        subject.complete();
+      },
+      () => {
+        subject.complete();
+      },
+    );
 
-      return {
-        archived: filePaths.length,
-        failed: 0,
-      };
-    } finally {
-      await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
-    }
+    return {
+      session$: subject.asObservable(),
+      result,
+    };
   }
 
   async disconnect(): Promise<void> {
@@ -155,14 +176,11 @@ export class RsyncBackend implements ArchiveBackend {
     };
   }
 
-  private emitProgress(session: TransferSession, options?: ArchiveTransferOptions): void {
-    options?.onProgress?.({
-      ...session,
-      files: session.files.map((file) => ({ ...file })),
-    });
+  private emitProgress(subject: ReplaySubject<TransferSession>, session: TransferSession): void {
+    subject.next(cloneTransferSession(session));
   }
 
-  private handleProgressLine(line: string, session: TransferSession, options?: ArchiveTransferOptions): void {
+  private handleProgressLine(line: string, session: TransferSession, subject: ReplaySubject<TransferSession>): void {
     const trimmed = line.trim();
     if (!trimmed) {
       return;
@@ -189,7 +207,7 @@ export class RsyncBackend implements ArchiveBackend {
         }
       }
 
-      this.emitProgress(session, options);
+      this.emitProgress(subject, session);
       return;
     }
 
@@ -200,7 +218,7 @@ export class RsyncBackend implements ArchiveBackend {
       session.updatedAt = Date.now();
       currentFile.status = 'transferring';
       currentFile.updatedAt = session.updatedAt;
-      this.emitProgress(session, options);
+      this.emitProgress(subject, session);
     }
   }
 
