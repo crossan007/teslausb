@@ -1,7 +1,15 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { dirname } from 'path';
 import { logger } from './logger';
-import { SyncStatus, Snapshot, PendingClips, OperationResult } from '../types';
+import {
+  SyncStatus,
+  Snapshot,
+  PendingClips,
+  OperationResult,
+  SyncStatusSchema,
+  SnapshotSchema,
+  PendingClipsSchema,
+} from '../types';
 import { ensureDir } from '../shared';
 
 /**
@@ -26,7 +34,12 @@ export class StateManager {
       }
       const content = readFileSync(path, 'utf-8');
       const data = JSON.parse(content);
-      return this.validateSyncStatus(data);
+      const parsed = SyncStatusSchema.safeParse(data);
+      if (!parsed.success) {
+        logger.warn({ issues: parsed.error.issues }, 'Invalid SyncStatus format');
+        return null;
+      }
+      return parsed.data;
     } catch (error) {
       logger.warn({ error }, 'Failed to read sync status');
       return null;
@@ -59,7 +72,12 @@ export class StateManager {
       }
       const content = readFileSync(path, 'utf-8');
       const data = JSON.parse(content);
-      return this.validateSnapshot(data);
+      const parsed = SnapshotSchema.safeParse(data);
+      if (!parsed.success) {
+        logger.warn({ issues: parsed.error.issues }, 'Invalid Snapshot format');
+        return null;
+      }
+      return parsed.data;
     } catch (error) {
       logger.warn({ error }, 'Failed to read snapshot');
       return null;
@@ -92,7 +110,12 @@ export class StateManager {
       }
       const content = readFileSync(path, 'utf-8');
       const data = JSON.parse(content);
-      return this.validatePendingClips(data);
+      const parsed = PendingClipsSchema.safeParse(data);
+      if (!parsed.success) {
+        logger.warn({ issues: parsed.error.issues }, 'Invalid PendingClips format');
+        return null;
+      }
+      return parsed.data;
     } catch (error) {
       logger.warn({ error }, 'Failed to read pending clips');
       return null;
@@ -128,60 +151,6 @@ export class StateManager {
     }
   }
 
-  /**
-   * Internal: validate SyncStatus shape at runtime.
-   */
-  private validateSyncStatus(data: any): SyncStatus {
-    if (
-      typeof data !== 'object'
-      || !('state' in data)
-      || !('queueFiles' in data)
-    ) {
-      throw new Error('Invalid SyncStatus format');
-    }
-    return {
-      state: data.state || 'idle',
-      queueFiles: data.queueFiles || 0,
-      queueEvents: data.queueEvents || 0,
-      queueOldestAgeSec: data.queueOldestAgeSec || 0,
-      lastStartEpoch: data.lastStartEpoch || 0,
-      lastEndEpoch: data.lastEndEpoch || 0,
-      lastDurationSec: data.lastDurationSec || 0,
-      lastResult: data.lastResult || 'never',
-    };
-  }
-
-  /**
-   * Internal: validate Snapshot shape at runtime.
-   */
-  private validateSnapshot(data: any): Snapshot {
-    if (typeof data !== 'object' || !('id' in data) || typeof data.id !== 'string') {
-      throw new Error('Invalid Snapshot format');
-    }
-    return {
-      id: data.id,
-      createdAt: data.createdAt || 0,
-      filePath: data.filePath || '',
-      tocPath: data.tocPath || '',
-      size: data.size || 0,
-      isLinked: data.isLinked || false,
-    };
-  }
-
-  /**
-   * Internal: validate PendingClips shape at runtime.
-   */
-  private validatePendingClips(data: any): PendingClips {
-    if (typeof data !== 'object' || !Array.isArray(data.files)) {
-      throw new Error('Invalid PendingClips format');
-    }
-    return {
-      totalFiles: data.totalFiles || 0,
-      totalEvents: data.totalEvents || 0,
-      oldestAgeSec: data.oldestAgeSec || 0,
-      files: data.files || [],
-    };
-  }
 }
 
 export const stateManager = new StateManager();

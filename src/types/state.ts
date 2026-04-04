@@ -1,17 +1,21 @@
+import { z } from 'zod';
+
 /**
  * Sync status represents the current state of the archiveloop sync operation.
  * Written to /mutable/sync_status by the orchestrator.
  */
-export interface SyncStatus {
-  state: 'idle' | 'archiving' | 'waiting';
-  queueFiles: number;
-  queueEvents: number;
-  queueOldestAgeSec: number;
-  lastStartEpoch: number;
-  lastEndEpoch: number;
-  lastDurationSec: number;
-  lastResult: 'never' | 'success' | 'error';
-}
+export const SyncStatusSchema = z.object({
+  state: z.enum(['idle', 'archiving', 'waiting']),
+  queueFiles: z.number(),
+  queueEvents: z.number().default(0),
+  queueOldestAgeSec: z.number().default(0),
+  lastStartEpoch: z.number().default(0),
+  lastEndEpoch: z.number().default(0),
+  lastDurationSec: z.number().default(0),
+  lastResult: z.enum(['never', 'success', 'error']).default('never'),
+});
+
+export type SyncStatus = z.infer<typeof SyncStatusSchema>;
 
 export const DefaultSyncStatus: SyncStatus = {
   state: 'idle',
@@ -27,50 +31,58 @@ export const DefaultSyncStatus: SyncStatus = {
 /**
  * Snapshot metadata
  */
-export interface Snapshot {
-  id: string; // e.g., "snap-000001"
-  createdAt: number; // Unix timestamp
-  filePath: string; // /backingfiles/snapshots/snap-XXXXXX/snap.bin
-  tocPath: string; // /backingfiles/snapshots/snap-XXXXXX/snap.bin.toc
-  size: number; // bytes
-  isLinked: boolean; // if mnt symlink exists
-}
+export const SnapshotSchema = z.object({
+  id: z.string(), // e.g., "snap-000001"
+  createdAt: z.number().default(0), // Unix timestamp
+  filePath: z.string().default(''), // /backingfiles/snapshots/snap-XXXXXX/snap.bin
+  tocPath: z.string().default(''), // /backingfiles/snapshots/snap-XXXXXX/snap.bin.toc
+  size: z.number().default(0), // bytes
+  isLinked: z.boolean().default(false), // if mnt symlink exists
+});
+
+export type Snapshot = z.infer<typeof SnapshotSchema>;
 
 /**
  * Represents a batch of camera clips pending archival
  */
-export interface PendingClips {
-  totalFiles: number;
-  totalEvents: number;
-  oldestAgeSec: number;
-  files: ClipFile[];
-}
+export const ClipFileSchema = z.object({
+  relPath: z.string(), // Relative to mount point, e.g., "SavedClips/2026-04-04_12-34/video.mp4"
+  isSymlink: z.boolean(),
+  ageSec: z.number(),
+});
 
-export interface ClipFile {
-  relPath: string; // Relative to mount point, e.g., "SavedClips/2026-04-04_12-34/video.mp4"
-  isSymlink: boolean;
-  ageSec: number;
-}
+export type ClipFile = z.infer<typeof ClipFileSchema>;
+
+export const PendingClipsSchema = z.object({
+  totalFiles: z.number().default(0),
+  totalEvents: z.number().default(0),
+  oldestAgeSec: z.number().default(0),
+  files: z.array(ClipFileSchema),
+});
+
+export type PendingClips = z.infer<typeof PendingClipsSchema>;
 
 /**
  * System health status
  */
-export interface SystemStatus {
-  uptime: number; // seconds
-  cpuTempC?: number;
-  drivesActive: boolean; // USB gadget mounted
-  totalSpace: number; // bytes
-  freeSpace: number; // bytes
-  numSnapshots: number;
-  snapshotOldest?: number; // Unix timestamp
-  snapshotNewest?: number; // Unix timestamp
-  ethSpeed?: string;
-  ethIp?: string;
-  wifiSsid?: string;
-  wifiFreqGHz?: number;
-  wifiSignalStrength?: number; // 0-100
-  wifiIp?: string;
-}
+export const SystemStatusSchema = z.object({
+  uptime: z.number(), // seconds
+  cpuTempC: z.number().optional(),
+  drivesActive: z.boolean(), // USB gadget mounted
+  totalSpace: z.number(), // bytes
+  freeSpace: z.number(), // bytes
+  numSnapshots: z.number(),
+  snapshotOldest: z.number().optional(), // Unix timestamp
+  snapshotNewest: z.number().optional(), // Unix timestamp
+  ethSpeed: z.string().optional(),
+  ethIp: z.string().optional(),
+  wifiSsid: z.string().optional(),
+  wifiFreqGHz: z.number().optional(),
+  wifiSignalStrength: z.number().optional(), // 0-100
+  wifiIp: z.string().optional(),
+});
+
+export type SystemStatus = z.infer<typeof SystemStatusSchema>;
 
 /**
  * Generic result wrapper for operations
