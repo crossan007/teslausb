@@ -168,6 +168,7 @@ function image_size_kb () {
 
 function release_all_images () {
   systemctl stop teslausb || true
+  systemctl stop teslausb-node || true
   killall archiveloop || true
   /root/bin/disable_gadget.sh || true
   umount -d /mnt/cam || true

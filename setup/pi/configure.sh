@@ -773,6 +773,69 @@ function install_push_message_scripts() {
   copy_script run/send_matrix.py "$install_path"
 }
 
+function install_node_backend_runtime() {
+  local app_dir=/root/teslausb-node
+
+  if [ -z "${SOURCE_DIR+x}" ] || [ ! -d "$SOURCE_DIR" ]
+  then
+    log_progress "STOP: SOURCE_DIR is not available; cannot install node backend"
+    exit 1
+  fi
+
+  log_progress "Installing node runtime dependencies"
+  apt-get -y --force-yes install nodejs npm
+
+  log_progress "Deploying node backend sources to $app_dir"
+  rm -rf "$app_dir"
+  mkdir -p "$app_dir"
+
+  cp -r "$SOURCE_DIR/src" "$app_dir/"
+  cp "$SOURCE_DIR/package.json" "$app_dir/"
+
+  if [ -e "$SOURCE_DIR/package-lock.json" ]
+  then
+    cp "$SOURCE_DIR/package-lock.json" "$app_dir/"
+  fi
+  if [ -e "$SOURCE_DIR/tsconfig.json" ]
+  then
+    cp "$SOURCE_DIR/tsconfig.json" "$app_dir/"
+  fi
+
+  log_progress "Installing node backend packages"
+  pushd "$app_dir" > /dev/null
+  if [ -e package-lock.json ]
+  then
+    npm ci
+  else
+    npm install
+  fi
+
+  log_progress "Building node backend"
+  npm run build
+
+  log_progress "Pruning dev dependencies"
+  npm prune --omit=dev
+  popd > /dev/null
+}
+
+function install_node_backend_service() {
+  log_progress "Installing teslausb-node.service"
+
+  systemctl disable --now teslausb.service || true
+  rm -f /lib/systemd/system/teslausb.service
+
+  if [ -z "${SOURCE_DIR:+x}" ] || [ ! -e "$SOURCE_DIR/setup/pi/systemd/teslausb-node.service" ]
+  then
+    log_progress "STOP: systemd unit template setup/pi/systemd/teslausb-node.service is missing"
+    exit 1
+  fi
+
+  cp "$SOURCE_DIR/setup/pi/systemd/teslausb-node.service" /lib/systemd/system/teslausb-node.service
+
+  systemctl daemon-reload
+  systemctl enable teslausb-node.service
+}
+
 if [[ $EUID -ne 0 ]]
 then
     log_progress "STOP: Run sudo -i."
@@ -810,22 +873,5 @@ log_progress "Using archive module: $archive_module"
 
 install_archive_scripts /root/bin "$archive_module"
 /tmp/verify-and-configure-archive.sh
-
-systemctl disable teslausb.service || true
-
-cat << EOF > /lib/systemd/system/teslausb.service
-[Unit]
-Description=TeslaUSB archiveloop service
-DefaultDependencies=no
-After=mutable.mount backingfiles.mount
-
-[Service]
-Type=simple
-ExecStart=/bin/bash /root/bin/archiveloop
-Restart=always
-
-[Install]
-WantedBy=backingfiles.mount
-EOF
-
-systemctl enable teslausb.service
+install_node_backend_runtime
+install_node_backend_service

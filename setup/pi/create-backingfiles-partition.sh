@@ -116,6 +116,7 @@ then
   then
     # special case: convert existing backingfiles from ext4 to xfs
     log_progress "reformatting existing backingfiles as xfs"
+    systemctl stop teslausb-node || true
     killall archiveloop || true
     /root/bin/disable_gadget.sh || true
     if mount | grep -qw "/mnt/cam"
