@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ArchiveBackend, ArchiveTransferExecution, SyncStatus, OperationResult, createCompletedTransferExecution } from '../types';
-import { Orchestrator, StateSink } from './orchestrator';
+import { ClipArchiveCoordinator, StateSink } from './clip-archive-coordinator';
 
 class MockBackend implements ArchiveBackend {
   name = 'mock';
@@ -63,11 +63,11 @@ class InMemoryStateSink implements StateSink {
   }
 }
 
-describe('Orchestrator', () => {
+describe('ClipArchiveCoordinator', () => {
   it('runs archive lifecycle when backend is reachable', async () => {
     const backend = new MockBackend();
     const state = new InMemoryStateSink();
-    const orchestrator = new Orchestrator(backend, undefined, undefined, state);
+    const orchestrator = new ClipArchiveCoordinator(backend, undefined, undefined, state);
 
     const result = await orchestrator.runArchiveCycle({
       fromPath: '/tmp/mnt',
@@ -88,7 +88,7 @@ describe('Orchestrator', () => {
     const backend = new MockBackend();
     backend.reachable = false;
 
-    const orchestrator = new Orchestrator(backend);
+    const orchestrator = new ClipArchiveCoordinator(backend);
     const result = await orchestrator.runArchiveCycle({
       fromPath: '/tmp/mnt',
       files: ['a.mp4'],
@@ -105,7 +105,7 @@ describe('Orchestrator', () => {
     const backend = new MockBackend();
     backend.failArchive = true;
 
-    const orchestrator = new Orchestrator(backend);
+    const orchestrator = new ClipArchiveCoordinator(backend);
 
     await expect(
       orchestrator.runArchiveCycle({ fromPath: '/tmp/mnt', files: ['a.mp4'] }),
@@ -117,7 +117,7 @@ describe('Orchestrator', () => {
 
   it('decides to create snapshot when interval elapsed', () => {
     const backend = new MockBackend();
-    const orchestrator = new Orchestrator(backend);
+    const orchestrator = new ClipArchiveCoordinator(backend);
 
     const result = orchestrator.evaluateMaintenance({
       lastSnapshotEpoch: 100,
@@ -131,7 +131,7 @@ describe('Orchestrator', () => {
 
   it('flags cleanup when free space threshold is low', () => {
     const backend = new MockBackend();
-    const orchestrator = new Orchestrator(backend);
+    const orchestrator = new ClipArchiveCoordinator(backend);
 
     const result = orchestrator.evaluateMaintenance({
       lastSnapshotEpoch: null,

@@ -1,0 +1,223 @@
+/**
+ * Legacy lineage:
+ * - run/archiveloop (main wait/reachability/archive lifecycle loop)
+ * - run/awake_start
+ * - run/awake_stop
+ */
+import { concatMap, Observable, Subscription } from 'rxjs';
+import { logger, stateManager } from '../core';
+import { CommandRunner, defaultCommandRunner } from '../shared/command-runner';
+import { DefaultSyncStatus, PendingClips, SyncStatus } from '../types';
+import { ClipDiscoveryLoop } from './clip-discovery-loop';
+import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
+import { ClipArchiveCoordinator } from './clip-archive-coordinator';
+import { ArchiveBackend } from '../types/archive';
+
+/**
+ * Controls polling cadence and lifecycle hook behavior around archive cycles.
+ */
+export interface RuntimeLifecycleLoopOptions {
+  /** Clip root path used by discovery and archive backends. */
+  clipDiscoveryRoot: string;
+  /** Path to persisted archived file list. */
+  archivedListPath: string;
+  /** Delay before each archive attempt once backend is reachable. */
+  archiveDelaySec: number;
+  /** Poll interval while waiting for reachability. */
+  reachabilityPollMs?: number;
+  /** Optional cap for reachability checks (useful in tests). */
+  maxReachabilityChecks?: number;
+}
+
+/**
+ * Minimal sync-status writer contract used while waiting for archive reachability.
+ */
+export interface SyncStatusWriter {
+  /** Persists the current sync state. */
+  writeSyncStatus(status: SyncStatus): void;
+}
+
+/**
+ * Minimal logger contract used for runtime lifecycle events.
+ */
+export interface RuntimeLifecycleLogger {
+  /** Records informational lifecycle events. */
+  info(payload: unknown, message?: string): void;
+  /** Records warning lifecycle events. */
+  warn(payload: unknown, message?: string): void;
+  /** Records error lifecycle events. */
+  error(payload: unknown, message?: string): void;
+}
+
+/**
+ * Coordinates clip discovery events with runtime lifecycle hooks and archive execution.
+ */
+export class RuntimeLifecycleLoop {
+  /** Subscription for the serialized discovery processing stream. */
+  private subscription: Subscription | null = null;
+  /** State writer used while waiting for backend reachability. */
+  private readonly syncStatusWriter: SyncStatusWriter;
+  /** Logger used for runtime lifecycle events. */
+  private readonly runtimeLogger: RuntimeLifecycleLogger;
+
+  /**
+   * Builds a runtime lifecycle loop instance.
+   */
+  constructor(
+    private readonly discoveryLoop: ClipDiscoveryLoop,
+    private readonly discoveryManager: ClipDiscoveryManager,
+    private readonly clipArchiveCoordinator: ClipArchiveCoordinator,
+    private readonly backend: ArchiveBackend,
+    private readonly options: RuntimeLifecycleLoopOptions,
+    private readonly commandRunner: CommandRunner = defaultCommandRunner,
+    dependencies?: {
+      syncStatusWriter?: SyncStatusWriter;
+      runtimeLogger?: RuntimeLifecycleLogger;
+    },
+  ) {
+    this.syncStatusWriter = dependencies?.syncStatusWriter ?? stateManager;
+    this.runtimeLogger = dependencies?.runtimeLogger ?? logger;
+  }
+
+  /**
+   * Starts the lifecycle loop and subscribes to discovery events.
+   */
+  start(): void {
+    if (this.subscription) {
+      return;
+    }
+
+    this.subscription = this.discoveryStream()
+      .pipe(concatMap(async (discoveryResult) => this.handleDiscovery(discoveryResult)))
+      .subscribe({
+        error: (error) => {
+          this.runtimeLogger.error({ error }, 'Runtime lifecycle stream failed');
+        },
+      });
+
+    this.discoveryLoop.start();
+  }
+
+  /**
+   * Stops discovery and unsubscribes lifecycle processing.
+   */
+  stop(): void {
+    this.subscription?.unsubscribe();
+    this.subscription = null;
+    this.discoveryLoop.stop();
+  }
+
+  /**
+   * Returns the discovery observable to support targeted tests.
+   */
+  protected discoveryStream(): Observable<ClipDiscoveryResult> {
+    return this.discoveryLoop.discovered$;
+  }
+
+  /**
+   * Handles one discovered clip batch through lifecycle hooks and archive execution.
+   */
+  private async handleDiscovery(discoveryResult: ClipDiscoveryResult): Promise<void> {
+    const reachable = await this.waitUntilReachable(discoveryResult.pendingClips);
+    if (!reachable) {
+      return;
+    }
+
+    await this.trySyncTime();
+    await this.runHook('/root/bin/awake_start');
+    await this.sleepMs(Math.max(0, this.options.archiveDelaySec) * 1000);
+
+    try {
+      let cycleResult;
+      try {
+        cycleResult = await this.clipArchiveCoordinator.runArchiveCycle({
+          fromPath: this.options.clipDiscoveryRoot,
+          files: discoveryResult.filePaths,
+        });
+      } catch (error) {
+        this.runtimeLogger.error({ error }, 'Archive cycle failed for discovery batch');
+      }
+
+      const archivedNow = await this.discoveryManager.resolveArchivedFromSource(
+        this.options.clipDiscoveryRoot,
+        discoveryResult.filePaths,
+      );
+
+      if (archivedNow.length > 0) {
+        await this.discoveryManager.markArchived(archivedNow, this.options.archivedListPath);
+      }
+
+      this.runtimeLogger.info({ archivedMarked: archivedNow.length, result: cycleResult }, 'Archive cycle completed from lifecycle loop');
+    } finally {
+      await this.runHook('/root/bin/awake_stop');
+    }
+  }
+
+  /**
+   * Waits until backend is reachable while publishing waiting sync status.
+   */
+  private async waitUntilReachable(pending: PendingClips): Promise<boolean> {
+    const reachabilityPollMs = Math.max(100, this.options.reachabilityPollMs ?? 1000);
+    const maxChecks = this.options.maxReachabilityChecks;
+    let checks = 0;
+
+    while (true) {
+      const reachable = await this.backend.isReachable();
+      if (reachable) {
+        return true;
+      }
+
+      checks += 1;
+      this.syncStatusWriter.writeSyncStatus({
+        ...DefaultSyncStatus,
+        state: 'waiting',
+        queueFiles: pending.totalFiles,
+        queueEvents: pending.totalEvents,
+        queueOldestAgeSec: pending.oldestAgeSec,
+      });
+
+      if (maxChecks !== undefined && checks >= maxChecks) {
+        this.runtimeLogger.warn({ checks }, 'Reachability checks exhausted for pending batch');
+        return false;
+      }
+
+      await this.sleepMs(reachabilityPollMs);
+    }
+  }
+
+  /**
+   * Best-effort time synchronization with the same host used in bash flow.
+   */
+  private async trySyncTime(): Promise<void> {
+    const sntp = await this.commandRunner.run('sntp', ['-S', 'time.google.com']);
+    if (sntp.code === 0) {
+      return;
+    }
+
+    const ntpdig = await this.commandRunner.run('ntpdig', ['-S', 'time.google.com']);
+    if (ntpdig.code === 0) {
+      return;
+    }
+
+    this.runtimeLogger.warn({ sntpCode: sntp.code, ntpdigCode: ntpdig.code }, 'Time synchronization failed');
+  }
+
+  /**
+   * Runs lifecycle hook scripts while swallowing failures.
+   */
+  private async runHook(scriptPath: string): Promise<void> {
+    const result = await this.commandRunner.run(scriptPath, []);
+    if (result.code !== 0) {
+      this.runtimeLogger.warn({ scriptPath, result }, 'Lifecycle hook failed');
+    }
+  }
+
+  /**
+   * Sleeps for the requested interval.
+   */
+  private async sleepMs(durationMs: number): Promise<void> {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, durationMs);
+    });
+  }
+}

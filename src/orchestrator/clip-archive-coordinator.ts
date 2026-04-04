@@ -37,7 +37,10 @@ export interface StateSink {
   writeTransferSession?(session: TransferSession): void;
 }
 
-export class Orchestrator {
+/**
+ * Coordinates one archive transfer cycle for discovered clip files.
+ */
+export class ClipArchiveCoordinator {
   constructor(
     private readonly backend: ArchiveBackend,
     private readonly snapshotManager: SnapshotManager = new SnapshotManager(),
