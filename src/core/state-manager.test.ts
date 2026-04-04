@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { StateManager } from './state-manager';
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
+import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { SyncStatus, Snapshot, PendingClips, OperationResult, TransferSession } from '../types';
@@ -42,6 +42,13 @@ describe('StateManager', () => {
       const read = stateManager.readSyncStatus();
 
       expect(read).toEqual(status);
+
+      const legacy = readFileSync(join(tempDir, 'sync_status'), 'utf-8');
+      expect(legacy).toContain('SYNC_STATE=archiving');
+      expect(legacy).toContain('SYNC_QUEUE_FILES=42');
+
+      const json = JSON.parse(readFileSync(join(tempDir, 'sync_status.json'), 'utf-8'));
+      expect(json).toEqual(status);
     });
 
     it('returns null when sync status does not exist', () => {
@@ -51,7 +58,7 @@ describe('StateManager', () => {
 
     it('validates sync status schema on read', () => {
       // Write invalid data
-      writeFileSync(join(tempDir, 'sync_status'), JSON.stringify({ invalid: 'data' }), 'utf-8');
+      writeFileSync(join(tempDir, 'sync_status.json'), JSON.stringify({ invalid: 'data' }), 'utf-8');
 
       const result = stateManager.readSyncStatus();
       expect(result).toBeNull();
@@ -62,12 +69,43 @@ describe('StateManager', () => {
         state: 'idle',
         queueFiles: 5,
       };
-      writeFileSync(join(tempDir, 'sync_status'), JSON.stringify(partialStatus), 'utf-8');
+      writeFileSync(join(tempDir, 'sync_status.json'), JSON.stringify(partialStatus), 'utf-8');
 
       const read = stateManager.readSyncStatus();
       expect(read?.queueFiles).toBe(5);
       expect(read?.queueEvents).toBe(0);
       expect(read?.lastResult).toBe('never');
+    });
+
+    it('reads legacy shell-style sync status when json sidecar is missing', () => {
+      writeFileSync(
+        join(tempDir, 'sync_status'),
+        [
+          'SYNC_STATE=waiting',
+          'SYNC_QUEUE_FILES=11',
+          'SYNC_QUEUE_EVENTS=4',
+          'SYNC_QUEUE_OLDEST_AGE_SEC=777',
+          'SYNC_LAST_START_EPOCH=100',
+          'SYNC_LAST_END_EPOCH=200',
+          'SYNC_LAST_DURATION_SEC=50',
+          'SYNC_LAST_RESULT=error',
+          '',
+        ].join('\n'),
+        'utf-8',
+      );
+
+      const read = stateManager.readSyncStatus();
+
+      expect(read).toEqual({
+        state: 'waiting',
+        queueFiles: 11,
+        queueEvents: 4,
+        queueOldestAgeSec: 777,
+        lastStartEpoch: 100,
+        lastEndEpoch: 200,
+        lastDurationSec: 50,
+        lastResult: 'error',
+      });
     });
   });
 
@@ -218,7 +256,7 @@ describe('StateManager', () => {
     });
 
     it('handles corrupted JSON gracefully', () => {
-      writeFileSync(join(tempDir, 'sync_status'), 'not valid json{', 'utf-8');
+      writeFileSync(join(tempDir, 'sync_status.json'), 'not valid json{', 'utf-8');
 
       const result = stateManager.readSyncStatus();
       expect(result).toBeNull();

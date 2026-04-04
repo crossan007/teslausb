@@ -25,6 +25,11 @@ import { ensureDir } from '../shared';
  * Wraps state files in /mutable/ with proper error handling and logging.
  */
 export class StateManager {
+  /** Legacy shell-compatible sync status file consumed by CGI status endpoint. */
+  private static readonly LegacySyncStatusFile = 'sync_status';
+  /** JSON sidecar for typed TS consumers during transition away from CGI. */
+  private static readonly JsonSyncStatusFile = 'sync_status.json';
+
   constructor(private readonly baseDir: string = '/mutable') {}
 
   private statePath(fileName: string): string {
@@ -32,14 +37,35 @@ export class StateManager {
   }
 
   /**
-   * Read sync status from /mutable/sync_status.
+   * Reads sync status, preferring JSON sidecar and falling back to legacy shell format.
    */
   readSyncStatus(): SyncStatus | null {
-    try {
-      const path = this.statePath('sync_status');
-      if (!existsSync(path)) {
-        return null;
+    const jsonPath = this.statePath(StateManager.JsonSyncStatusFile);
+    if (existsSync(jsonPath)) {
+      const parsedJson = this.readSyncStatusJson(jsonPath);
+      if (parsedJson) {
+        return parsedJson;
       }
+    }
+
+    const legacyPath = this.statePath(StateManager.LegacySyncStatusFile);
+    if (!existsSync(legacyPath)) {
+      return null;
+    }
+
+    const parsedLegacy = this.readSyncStatusLegacy(legacyPath);
+    if (parsedLegacy) {
+      return parsedLegacy;
+    }
+
+    return this.readSyncStatusJson(legacyPath);
+  }
+
+  /**
+   * Reads sync status from a JSON file and validates schema.
+   */
+  private readSyncStatusJson(path: string): SyncStatus | null {
+    try {
       const content = readFileSync(path, 'utf-8');
       const data = JSON.parse(content);
       const parsed = SyncStatusSchema.safeParse(data);
@@ -49,24 +75,130 @@ export class StateManager {
       }
       return parsed.data;
     } catch (error) {
-      logger.warn({ error }, 'Failed to read sync status');
+      logger.warn({ error, path }, 'Failed to read sync status JSON');
       return null;
     }
   }
 
   /**
-   * Write sync status to /mutable/sync_status.
+   * Reads sync status from legacy shell-style key/value file.
+   */
+  private readSyncStatusLegacy(path: string): SyncStatus | null {
+    try {
+      const content = readFileSync(path, 'utf-8');
+      const values = new Map<string, string>();
+
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) {
+          continue;
+        }
+
+        const equals = trimmed.indexOf('=');
+        if (equals <= 0) {
+          continue;
+        }
+
+        const key = trimmed.slice(0, equals);
+        const value = trimmed.slice(equals + 1);
+        values.set(key, value);
+      }
+
+      if (values.size === 0 || !values.has('SYNC_STATE')) {
+        return null;
+      }
+
+      const status: SyncStatus = {
+        state: this.parseState(values.get('SYNC_STATE')),
+        queueFiles: this.parseNumber(values.get('SYNC_QUEUE_FILES')),
+        queueEvents: this.parseNumber(values.get('SYNC_QUEUE_EVENTS')),
+        queueOldestAgeSec: this.parseNumber(values.get('SYNC_QUEUE_OLDEST_AGE_SEC')),
+        lastStartEpoch: this.parseNumber(values.get('SYNC_LAST_START_EPOCH')),
+        lastEndEpoch: this.parseNumber(values.get('SYNC_LAST_END_EPOCH')),
+        lastDurationSec: this.parseNumber(values.get('SYNC_LAST_DURATION_SEC')),
+        lastResult: this.parseResult(values.get('SYNC_LAST_RESULT')),
+      };
+
+      const parsed = SyncStatusSchema.safeParse(status);
+      if (!parsed.success) {
+        logger.warn({ issues: parsed.error.issues, path }, 'Invalid legacy SyncStatus format');
+        return null;
+      }
+      return parsed.data;
+    } catch (error) {
+      logger.warn({ error, path }, 'Failed to read legacy sync status');
+      return null;
+    }
+  }
+
+  /**
+   * Writes sync status for both legacy CGI consumers and TS JSON consumers.
+   *
+   * Compatibility shim: remove legacy shell output once frontend no longer sources
+   * /mutable/sync_status from CGI scripts.
    */
   writeSyncStatus(status: SyncStatus): void {
     try {
-      const path = this.statePath('sync_status');
-      ensureDir(dirname(path));
-      writeFileSync(path, JSON.stringify(status, null, 2), 'utf-8');
+      const legacyPath = this.statePath(StateManager.LegacySyncStatusFile);
+      const jsonPath = this.statePath(StateManager.JsonSyncStatusFile);
+
+      ensureDir(dirname(legacyPath));
+
+      writeFileSync(legacyPath, this.toLegacySyncStatus(status), 'utf-8');
+      writeFileSync(jsonPath, JSON.stringify(status, null, 2), 'utf-8');
       logger.debug({ status }, 'Sync status written');
     } catch (error) {
       logger.error({ error, status }, 'Failed to write sync status');
       throw error;
     }
+  }
+
+  /**
+   * Converts sync status to legacy shell-style variables for CGI compatibility.
+   */
+  private toLegacySyncStatus(status: SyncStatus): string {
+    return [
+      `SYNC_STATE=${status.state}`,
+      `SYNC_QUEUE_FILES=${status.queueFiles}`,
+      `SYNC_QUEUE_EVENTS=${status.queueEvents}`,
+      `SYNC_QUEUE_OLDEST_AGE_SEC=${status.queueOldestAgeSec}`,
+      `SYNC_LAST_START_EPOCH=${status.lastStartEpoch}`,
+      `SYNC_LAST_END_EPOCH=${status.lastEndEpoch}`,
+      `SYNC_LAST_DURATION_SEC=${status.lastDurationSec}`,
+      `SYNC_LAST_RESULT=${status.lastResult}`,
+      '',
+    ].join('\n');
+  }
+
+  /**
+   * Parses a number-like string, returning 0 on invalid or missing values.
+   */
+  private parseNumber(raw: string | undefined): number {
+    const value = Number(raw ?? '0');
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
+    return Math.max(0, Math.floor(value));
+  }
+
+  /**
+   * Parses legacy SYNC_STATE values into typed sync states.
+   */
+  private parseState(raw: string | undefined): SyncStatus['state'] {
+    if (raw === 'archiving' || raw === 'waiting' || raw === 'idle') {
+      return raw;
+    }
+    return 'idle';
+  }
+
+  /**
+   * Parses legacy SYNC_LAST_RESULT values into typed result states.
+   */
+  private parseResult(raw: string | undefined): SyncStatus['lastResult'] {
+    if (raw === 'success' || raw === 'error' || raw === 'never') {
+      return raw;
+    }
+    return 'never';
   }
 
   /**
