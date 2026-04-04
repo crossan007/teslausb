@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ConfigLoader } from './config-loader';
+import { ConfigLoader } from '../config/config-loader';
 import { readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { writeFileSync, unlinkSync } from 'fs';
