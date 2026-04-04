@@ -142,28 +142,6 @@ describe('StateManager', () => {
     });
   });
 
-  describe('SystemStatus', () => {
-    it('aggregates all component states', () => {
-      const systemStatus = stateManager.readSystemStatus();
-
-      expect(systemStatus?.uptime).toBeGreaterThanOrEqual(0);
-      expect(systemStatus?.drivesActive).toBeDefined();
-    });
-
-    it('provides defaults when components do not exist', () => {
-      const systemStatus = stateManager.readSystemStatus();
-
-      expect(systemStatus?.uptime).toBeGreaterThanOrEqual(0);
-      expect(systemStatus?.totalSpace).toBeGreaterThanOrEqual(0);
-      expect(systemStatus?.freeSpace).toBeGreaterThanOrEqual(0);
-    });
-
-    it('includes timestamp in system status', () => {
-      const systemStatus = stateManager.readSystemStatus();
-      expect(systemStatus?.numSnapshots).toBeGreaterThanOrEqual(0);
-    });
-  });
-
   describe('OperationResult', () => {
     it('records operation results in audit', () => {
       const result: OperationResult<{ clipsProcessed: number }> = {

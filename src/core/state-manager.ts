@@ -1,7 +1,8 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { dirname } from 'path';
 import { logger } from './logger';
-import { SyncStatus, Snapshot, PendingClips, SystemStatus, OperationResult } from '../types';
+import { SyncStatus, Snapshot, PendingClips, OperationResult } from '../types';
+import { ensureDir } from '../shared';
 
 /**
  * Type-safe filesystem-backed state manager for TeslaUSB.
@@ -38,7 +39,7 @@ export class StateManager {
   writeSyncStatus(status: SyncStatus): void {
     try {
       const path = this.statePath('sync_status');
-      this.ensureDir(dirname(path));
+      ensureDir(dirname(path));
       writeFileSync(path, JSON.stringify(status, null, 2), 'utf-8');
       logger.debug({ status }, 'Sync status written');
     } catch (error) {
@@ -71,7 +72,7 @@ export class StateManager {
   writeSnapshot(snapshot: Snapshot): void {
     try {
       const path = this.statePath('snapshot');
-      this.ensureDir(dirname(path));
+      ensureDir(dirname(path));
       writeFileSync(path, JSON.stringify(snapshot, null, 2), 'utf-8');
       logger.debug({ snapshot }, 'Snapshot written');
     } catch (error) {
@@ -104,7 +105,7 @@ export class StateManager {
   writePendingClips(clips: PendingClips): void {
     try {
       const path = this.statePath('pending_clips');
-      this.ensureDir(dirname(path));
+      ensureDir(dirname(path));
       writeFileSync(path, JSON.stringify(clips, null, 2), 'utf-8');
       logger.debug({ clipCount: clips.files.length }, 'Pending clips written');
     } catch (error) {
@@ -114,45 +115,16 @@ export class StateManager {
   }
 
   /**
-   * Read overall system status (aggregated from component states).
-   */
-  readSystemStatus(): SystemStatus | null {
-    try {
-      const status: SystemStatus = {
-        uptime: Math.floor(process.uptime()),
-        drivesActive: true,
-        totalSpace: 0,
-        freeSpace: 0,
-        numSnapshots: 0,
-      };
-
-      return status;
-    } catch (error) {
-      logger.warn({ error }, 'Failed to read system status');
-      return null;
-    }
-  }
-
-  /**
    * Record an operation result (success/failure) for audit + recovery.
    */
   writeOperationResult(operation: string, result: OperationResult<any>): void {
     try {
       const auditPath = this.statePath(`audit/${operation}.json`);
-      this.ensureDir(dirname(auditPath));
+      ensureDir(dirname(auditPath));
       writeFileSync(auditPath, JSON.stringify(result, null, 2), 'utf-8');
       logger.debug({ operation, success: result.success }, 'Operation result recorded');
     } catch (error) {
       logger.warn({ error, operation }, 'Failed to record operation result');
-    }
-  }
-
-  /**
-   * Internal: ensure directory exists.
-   */
-  private ensureDir(path: string): void {
-    if (!existsSync(path)) {
-      mkdirSync(path, { recursive: true });
     }
   }
 
