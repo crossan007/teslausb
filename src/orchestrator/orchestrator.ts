@@ -2,7 +2,7 @@
  * Legacy lineage:
  * - run/archiveloop (archive lifecycle loop: verify/reachability/connect/archive/disconnect)
  */
-import { ArchiveBackend, DefaultSyncStatus, OperationResult, SyncStatus } from '../types';
+import { ArchiveBackend, DefaultSyncStatus, OperationResult, SyncStatus, TransferSession } from '../types';
 import { logger } from '../core/logger';
 import { SnapshotDecision, SnapshotManager } from './snapshot-manager';
 import { FreeSpaceDecision, FreeSpaceManager } from './free-space-manager';
@@ -34,6 +34,7 @@ export interface MaintenanceResult {
 export interface StateSink {
   writeSyncStatus(status: SyncStatus): void;
   writeOperationResult(operation: string, result: OperationResult<SyncCycleResult>): void;
+  writeTransferSession?(session: TransferSession): void;
 }
 
 export class Orchestrator {
@@ -78,7 +79,11 @@ export class Orchestrator {
     try {
       await this.backend.connect();
 
-      const result = await this.backend.archiveClips(input.fromPath, input.files);
+      const result = await this.backend.archiveClips(input.fromPath, input.files, {
+        onProgress: (session) => {
+          this.stateSink?.writeTransferSession?.(session);
+        },
+      });
       cycleResult = {
         skipped: false,
         archived: result.archived,

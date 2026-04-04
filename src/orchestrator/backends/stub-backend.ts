@@ -1,6 +1,5 @@
 /**
  * Legacy lineage:
- * - run/rsync_archive/*
  * - run/cifs_archive/*
  * - run/nfs_archive/*
  * - run/rclone_archive/*
@@ -43,12 +42,6 @@ export class StubArchiveBackend implements ArchiveBackend {
 
   async disconnect(): Promise<void> {
     return;
-  }
-}
-
-export class RsyncBackendStub extends StubArchiveBackend {
-  constructor() {
-    super('rsync');
   }
 }
 

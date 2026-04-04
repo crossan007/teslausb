@@ -1,6 +1,9 @@
 export {
+  RsyncBackend,
+} from './rsync-backend';
+
+export {
   StubArchiveBackend,
-  RsyncBackendStub,
   CifsBackendStub,
   NfsBackendStub,
   RcloneBackendStub,

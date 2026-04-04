@@ -1,3 +1,16 @@
+import { TransferSession } from './transfer';
+
+export interface ArchiveTransferOptions {
+  sessionId?: string;
+  onProgress?: (session: TransferSession) => void;
+}
+
+export interface ArchiveTransferResult {
+  archived: number;
+  failed: number;
+  errors?: string[];
+}
+
 /**
  * Abstract interface that all archive backends must implement.
  */
@@ -29,11 +42,8 @@ export interface ArchiveBackend {
   archiveClips(
     fromPath: string, // Source mount path
     filePaths: string[], // Relative paths to archive
-  ): Promise<{
-    archived: number;
-    failed: number;
-    errors?: string[];
-  }>;
+    options?: ArchiveTransferOptions,
+  ): Promise<ArchiveTransferResult>;
 
   /**
    * Copy music from source to music archive.
