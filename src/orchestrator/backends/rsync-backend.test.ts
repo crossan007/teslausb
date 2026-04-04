@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { RsyncBackend } from './rsync-backend';
-import { CommandRunner, CommandResult, StreamingCommandHandlers } from './command-runner';
+import { CommandRunner, CommandResult, StreamingCommandHandlers } from '../../shared/command-runner';
 import { TransferSession } from '../../types';
 
 class MockCommandRunner implements CommandRunner {

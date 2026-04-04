@@ -22,7 +22,7 @@ import {
   TransferFileProgress,
   TransferSession,
 } from '../../types';
-import { CommandRunner, defaultCommandRunner } from './command-runner';
+import { CommandRunner, defaultCommandRunner } from '../../shared/command-runner';
 
 export interface RsyncBackendOptions {
   legacyConfigPath?: string;
