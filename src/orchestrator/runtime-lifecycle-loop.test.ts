@@ -177,9 +177,6 @@ describe('RuntimeLifecycleLoop', () => {
 
     expect(orchestrator.calls).toBe(1);
     expect(manager.marked).toEqual(['SavedClips/evt1/file.mp4']);
-    expect(runner.calls.map((call) => call.command)).toContain('/root/bin/awake_start');
-    expect(runner.calls.map((call) => call.command)).toContain('/root/bin/awake_stop');
-    expect(runner.calls.map((call) => call.command)).toContain('/root/bin/send-push-message');
     expect(triggerEvents.map((event) => event.type)).toEqual(['archive-start', 'archive-finish']);
     expect(syncStatusWrites.length).toBeGreaterThan(0);
 

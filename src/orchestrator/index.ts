@@ -10,7 +10,7 @@ import { ClipDiscoveryManager } from './clip-discovery-manager';
 import { ClipDiscoveryLoop } from './clip-discovery-loop';
 import { RsyncBackend } from './backends';
 import { RuntimeLifecycleLoop } from './runtime-lifecycle-loop';
-import { ArchiveEventBus } from './events';
+import { ArchiveEventBus, PushMessageEventHandler, TeslaApiInteropEventHandler } from './events';
 
 const CLIP_DISCOVERY_ROOT = '/mutable/TeslaCam';
 const ARCHIVED_LIST_PATH = '/mutable/sentry_files_archived';
@@ -71,6 +71,15 @@ async function main(): Promise<void> {
     ? buildStartTriggerFilePaths(finishTriggerFilePaths)
     : [];
   const eventBus = new ArchiveEventBus();
+  const pushMessageEventHandler = new PushMessageEventHandler(config.notificationTitle);
+  const teslaApiInteropEventHandler = new TeslaApiInteropEventHandler();
+  eventBus.subscribe(async (event) => {
+    await pushMessageEventHandler.handle(event);
+  });
+  eventBus.subscribe(async (event) => {
+    await teslaApiInteropEventHandler.handle(event);
+  });
+
   eventBus.subscribe(async (event) => {
     if (event.type !== 'archive-start' && event.type !== 'archive-finish') {
       return;
@@ -112,7 +121,6 @@ async function main(): Promise<void> {
       clipDiscoveryRoot: CLIP_DISCOVERY_ROOT,
       archivedListPath: ARCHIVED_LIST_PATH,
       archiveDelaySec: config.archiveDelay,
-      notificationTitle: config.notificationTitle,
       startTriggerFilePaths,
       finishTriggerFilePaths,
     },

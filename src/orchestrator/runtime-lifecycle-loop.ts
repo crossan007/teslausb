@@ -1,8 +1,6 @@
 /**
  * Legacy lineage:
  * - run/archiveloop (main wait/reachability/archive lifecycle loop)
- * - run/awake_start
- * - run/awake_stop
  */
 import { concatMap, Observable, Subscription } from 'rxjs';
 import { logger, stateManager } from '../core';
@@ -28,8 +26,6 @@ export interface RuntimeLifecycleLoopOptions {
   reachabilityPollMs?: number;
   /** Optional cap for reachability checks (useful in tests). */
   maxReachabilityChecks?: number;
-  /** Title prefix used by legacy send-push-message hook. */
-  notificationTitle?: string;
   /** Relative trigger file paths emitted at archive-start (optional, opt-in). */
   startTriggerFilePaths?: string[];
   /** Relative trigger file paths emitted at archive-finish (legacy-compatible default). */
@@ -142,8 +138,6 @@ export class RuntimeLifecycleLoop {
       totalEvents: discoveryResult.pendingClips.totalEvents,
       triggerFilePaths: this.options.startTriggerFilePaths ?? [],
     });
-    await this.sendPushMessage(this.buildStartMessage(discoveryResult), 'start');
-    await this.runHook('/root/bin/awake_start');
     await this.sleepMs(Math.max(0, this.options.archiveDelaySec) * 1000);
 
     let cycleSucceeded = false;
@@ -182,8 +176,6 @@ export class RuntimeLifecycleLoop {
         succeeded: cycleSucceeded,
         triggerFilePaths: cycleSucceeded ? (this.options.finishTriggerFilePaths ?? []) : [],
       });
-      await this.sendPushMessage(this.buildFinishMessage(archivedMarkedCount, cycleSucceeded), 'finish');
-      await this.runHook('/root/bin/awake_stop');
     }
   }
 
@@ -234,44 +226,6 @@ export class RuntimeLifecycleLoop {
     }
 
     this.runtimeLogger.warn({ sntpCode: sntp.code, ntpdigCode: ntpdig.code }, 'Time synchronization failed');
-  }
-
-  /**
-   * Runs lifecycle hook scripts while swallowing failures.
-   */
-  private async runHook(scriptPath: string): Promise<void> {
-    const result = await this.commandRunner.run(scriptPath, []);
-    if (result.code !== 0) {
-      this.runtimeLogger.warn({ scriptPath, result }, 'Lifecycle hook failed');
-    }
-  }
-
-  /**
-   * Sends a lifecycle push notification using legacy hook contract.
-   */
-  private async sendPushMessage(message: string, phase: 'start' | 'finish'): Promise<void> {
-    const title = this.options.notificationTitle ?? 'TeslaUSB';
-    const result = await this.commandRunner.run('/root/bin/send-push-message', [`${title}:`, message, phase]);
-    if (result.code !== 0) {
-      this.runtimeLogger.warn({ phase, result }, 'Push notification hook failed');
-    }
-  }
-
-  /**
-   * Builds start-phase notification text for an archive batch.
-   */
-  private buildStartMessage(discoveryResult: ClipDiscoveryResult): string {
-    const total = discoveryResult.pendingClips.totalFiles;
-    const events = discoveryResult.pendingClips.totalEvents;
-    return `Archiving ${total} file(s) including ${events} event folder(s) starting at ${new Date().toString()}`;
-  }
-
-  /**
-   * Builds finish-phase notification text for an archive batch.
-   */
-  private buildFinishMessage(archivedCount: number, succeeded: boolean): string {
-    const prefix = succeeded ? 'Archiving completed successfully.' : 'Error during archiving.';
-    return `${prefix} Archived ${archivedCount} file(s).`;
   }
 
   /**
