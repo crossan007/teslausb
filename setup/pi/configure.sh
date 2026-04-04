@@ -773,6 +773,50 @@ function install_push_message_scripts() {
   copy_script run/send_matrix.py "$install_path"
 }
 
+function install_node_runtime() {
+  local nvm_dir=/opt/nvm
+  local nvm_install_script=/tmp/install-nvm.sh
+  local node_version="20"
+
+  log_progress "Installing nvm-managed node runtime"
+  apt-get -y install ca-certificates curl
+
+  mkdir -p "$nvm_dir"
+
+  if [ ! -s "$nvm_dir/nvm.sh" ]
+  then
+    if declare -F curlwrapper > /dev/null
+    then
+      curlwrapper -L -o "$nvm_install_script" https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh
+    else
+      curl -L --fail -o "$nvm_install_script" https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh
+    fi
+
+    PROFILE=/dev/null NVM_DIR="$nvm_dir" bash "$nvm_install_script"
+  fi
+
+  export NVM_DIR="$nvm_dir"
+  # shellcheck disable=SC1090
+  . "$NVM_DIR/nvm.sh"
+
+  nvm install "$node_version"
+  nvm alias default "$node_version"
+
+  local node_path
+  local npm_path
+  local npx_path
+  node_path="$(nvm which default)"
+  npm_path="$(dirname "$node_path")/npm"
+  npx_path="$(dirname "$node_path")/npx"
+
+  ln -sf "$node_path" /usr/local/bin/node
+  ln -sf "$npm_path" /usr/local/bin/npm
+  ln -sf "$npx_path" /usr/local/bin/npx
+
+  log_progress "Installed node runtime: $(/usr/local/bin/node --version)"
+  log_progress "Installed npm runtime: $(/usr/local/bin/npm --version)"
+}
+
 function ensure_node_backend_supported_archive() {
   if [ "${ARCHIVE_SYSTEM:-none}" != "rsync" ]
   then
@@ -791,8 +835,7 @@ function install_node_backend_runtime() {
     exit 1
   fi
 
-  log_progress "Installing node runtime dependencies"
-  apt-get -y --force-yes install nodejs npm
+  install_node_runtime
 
   log_progress "Deploying node backend sources to $app_dir"
   rm -rf "$app_dir"
@@ -814,16 +857,16 @@ function install_node_backend_runtime() {
   pushd "$app_dir" > /dev/null
   if [ -e package-lock.json ]
   then
-    npm ci
+    /usr/local/bin/npm ci
   else
-    npm install
+    /usr/local/bin/npm install
   fi
 
   log_progress "Building node backend"
-  npm run build
+  /usr/local/bin/npm run build
 
   log_progress "Pruning dev dependencies"
-  npm prune --omit=dev
+  /usr/local/bin/npm prune --omit=dev
   popd > /dev/null
 }
 
