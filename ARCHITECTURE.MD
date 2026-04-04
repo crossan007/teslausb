@@ -384,3 +384,449 @@ For large changes, consider:
 2. **Test in a "none" archive mode** → on the car, with `ARCHIVE_SYSTEM=none`, sync logic runs but no data leaves device.
 3. **Single-backend test** → if adding multi-backend support, test one backend thoroughly before others.
 4. **Dogfood before release** → run your branch on your own car for a week before opening a PR.
+
+---
+
+## 11) Full TypeScript Modernization Roadmap (v2.0)
+
+### Vision
+
+Migrate the entire TeslaUSB application—including `archiveloop`, all archive backends, API layer, and web UI—to a **strongly-typed TypeScript monorepo**. This improves:
+
+- **Type safety** across runtime orchestration, state management, and API contracts.
+- **Testability** with unit, integration, and e2e test suites.
+- **Developer experience** with IDE intellisense, auto-completion, and compile-time error catching.
+- **Maintainability** with a unified language, shared types, and clear module boundaries.
+- **Time-to-contribution** for new developers (no Bash expertise required).
+
+### New Repository Structure (v2.0)
+
+```
+teslausb/
+├── src/
+│   ├── types/                   # Shared TypeScript interfaces & types
+│   │   ├── config.ts            # Configuration (zod-validated)
+│   │   ├── archive.ts           # Archive system types
+│   │   ├── orchestrator.ts       # Orchestrator state & events
+│   │   └── api.ts               # API request/response schemas
+│   │
+│   ├── core/
+│   │   ├── logger.ts            # Structured logging (pino)
+│   │   ├── config-loader.ts      # Load & validate /root/teslausb_setup_variables.conf
+│   │   ├── state-manager.ts      # Filesystem-backed state with TS wrappers
+│   │   └── event-bus.ts          # Inter-component communication
+│   │
+│   ├── orchestrator/             # archiveloop v2.0 (core event loop)
+│   │   ├── index.ts              # Main orchestrator loop
+│   │   ├── archive-manager.ts     # Archive lifecycle (connect/disconnect/sync)
+│   │   ├── snapshot-manager.ts    # Snapshot creation/retention/cleanup
+│   │   ├── free-space-manager.ts  # Disk pressure handling
+│   │   ├── usb-gadget-manager.ts  # USB attach/detach
+│   │   └── idle-waiter.ts         # Car idle detection
+│   │
+│   ├── archive-backends/         # Pluggable archive systems
+│   │   ├── base.ts               # Abstract backend interface
+│   │   ├── rsync/
+│   │   ├── rclone/
+│   │   ├── cifs/
+│   │   ├── nfs/
+│   │   └── none/
+│   │
+│   ├── api/                       # Express.js web API
+│   │   ├── server.ts              # API bootstrap
+│   │   ├── routes/
+│   │   │   ├── status.ts          # GET /api/status
+│   │   │   ├── logs.ts            # GET /api/logs
+│   │   │   ├── config.ts          # GET/POST /api/config
+│   │   │   ├── sync.ts            # POST /api/sync/trigger
+│   │   │   ├── system.ts          # GET /api/system (uptime, temp, etc)
+│   │   │   └── diagnostics.ts     # GET /api/diagnostics
+│   │   ├── middleware/
+│   │   │   ├── auth.ts
+│   │   │   ├── error-handler.ts
+│   │   │   └── logging.ts
+│   │   └── schemas/               # Zod schemas for request/response validation
+│   │
+│   ├── frontend/                  # React/TypeScript SPA
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── hooks/
+│   │   ├── services/api/          # Generated from OpenAPI spec
+│   │   └── types/                 # Frontend-specific types
+│   │
+│   ├── scripts/                   # One-off utilities, migrations
+│   └── __tests__/                 # Unit, integration, e2e tests
+│       ├── unit/
+│       ├── integration/
+│       └── e2e/
+│
+├── dist/                          # Compiled output for Pi deployment
+├── docker-compose.dev.yml         # Local dev environment (mock archiveloop state)
+├── package.json / pnpm-lock.yaml
+├── tsconfig.json
+├── vitest.config.ts               # Test runner config
+├── docker/                        # Production Dockerfile for Pi deployment
+└── docs/                          # Developer guides, API reference
+```
+
+### Core Architectural Decisions
+
+#### 1. **Config Validation (Zod)**
+
+```typescript
+// src/types/config.ts
+import { z } from 'zod';
+
+export const ConfigSchema = z.object({
+  archiveSystem: z.enum(['rsync', 'rclone', 'cifs', 'nfs', 'none']),
+  rsyncServer: z.string().optional(),
+  rsyncUser: z.string().optional(),
+  // ... all other config
+});
+
+export type TeslaUSBConfig = z.infer<typeof ConfigSchema>;
+```
+
+Replaces env var chaos with **runtime-validated types**. Config loader parses `/root/teslausb_setup_variables.conf` and fails fast if invalid.
+
+#### 2. **State Management (Filesystem + Types)**
+
+```typescript
+// src/core/state-manager.ts
+export class StateManager {
+  async writeSyncStatus(status: SyncStatus): Promise<void> {
+    // Write to /mutable/sync_status as JSON
+    // Type-safe: SyncStatus interface ensures correctness
+  }
+
+  async readArchiveloopLog(): Promise<string> {
+    // Read from /mutable/archiveloop.log
+  }
+
+  async getSnapshot(id: string): Promise<Snapshot> {
+    // Query /backingfiles/snapshots/snap-{id}/
+  }
+}
+```
+
+Keeps state on disk (for persistence, concurrency, shell script interop) but wraps it in TypeScript classes.
+
+#### 3. **Event-Driven Orchestrator**
+
+```typescript
+// src/orchestrator/index.ts
+export class Orchestrator extends EventEmitter {
+  async run(): Promise<void> {
+    while (true) {
+      this.emit('archiveLoop:start');
+
+      const isReachable = await this.archiveManager.isReachable();
+      if (isReachable) {
+        this.emit('archiveLoop:archiving');
+        await this.archiveManager.syncClips();
+        this.emit('archiveLoop:archivingComplete');
+      }
+
+      this.emit('archiveLoop:waitingForArchive');
+      await this.waitForArchiveStateChange();
+    }
+  }
+}
+```
+
+Replaces ad-hoc bash control flow with **clear event lifecycle**, easier to test and monitor.
+
+#### 4. **Structured Logging (Pino)**
+
+```typescript
+// All modules
+import { logger } from './core/logger';
+
+logger.info({ files: 100, events: 5 }, 'Starting archive');
+logger.error({ error: err.message }, 'Archive failed');
+```
+
+Replaces `echo "..."` >> `/mutable/archiveloop.log` with JSON-structured logs, easier to parse, monitor, and aggregate.
+
+#### 5. **Archive Backend Interface**
+
+```typescript
+// src/archive-backends/base.ts
+export abstract class ArchiveBackend {
+  abstract name: string;
+
+  abstract verify(): Promise<void>;
+  abstract isReachable(): Promise<boolean>;
+  abstract connect(): Promise<void>;
+  abstract archiveClips(filePaths: string[]): Promise<{ archived: number; failed: number }>;
+  abstract copyMusic(sourcePath: string): Promise<void>;
+  abstract disconnect(): Promise<void>;
+}
+```
+
+All backends (rsync, cifs, etc.) implement this interface. Type-safe plugin system.
+
+#### 6. **REST API (Express + OpenAPI)**
+
+```typescript
+// src/api/routes/status.ts
+import { Router } from 'express';
+import { StatusSchema } from '../schemas';
+
+const router = Router();
+
+router.get('/status', async (req, res, next) => {
+  try {
+    const status = await orchestrator.getStatus();
+    const validated = StatusSchema.parse(status);
+    res.json(validated);
+  } catch (err) {
+    next(err);
+  }
+});
+```
+
+Auto-generate OpenAPI 3.0 spec from route definitions. Frontend uses generated TypeScript client.
+
+#### 7. **Frontend (React + TypeScript)**
+
+```typescript
+// src/frontend/components/SyncStatus.tsx
+import { useSyncStatus } from '../hooks/useStatus';
+
+export const SyncStatus: React.FC = () => {
+  const { status, isLoading, error } = useSyncStatus();
+
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+
+  return (
+    <div>
+      <p>Backlog: {status.sync_queue_files} files</p>
+      <p>Oldest pending: {formatDuration(status.sync_queue_oldest_age_sec)}</p>
+    </div>
+  );
+};
+```
+
+Modern React, TypeScript client auto-generated from API schema, proper error boundaries and loading states.
+
+### Implementation Phases
+
+#### Phase 1: Foundation & Core Types (Weeks 1–2)
+
+**Goals:**
+- Set up TypeScript monorepo (pnpm workspaces, tsconfig).
+- Create shared type definitions (Config, SyncStatus, ArchiveBackend interface, etc.).
+- Implement ConfigLoader + StateManager.
+- Unit tests for types and config validation.
+
+**Deliverables:**
+- `src/types/`, `src/core/` modules complete.
+- Test coverage for config loading and state reads/writes.
+- Dev environment (local TypeScript compilation works).
+
+**Risk level:** Low. No runtime changes yet.
+
+#### Phase 2: Orchestrator Core (Weeks 3–5)
+
+**Goals:**
+- Rewrite archiveloop as TypeScript Orchestrator class.
+- Implement archive lifecycle (connect/disconnect/sync).
+- Implement snapshot and free-space managers.
+- Stub out archive backends (interface, no real operations yet).
+
+**Deliverables:**
+- `src/orchestrator/` complete, passes dry-run tests.
+- Archive backends as stubs (inherit from interface, no-op methods).
+- Unit tests for orchestrator logic, snapshot decision-making, free-space thresholds.
+
+**Risk level:** Low. Runs locally in test mode; not deployed yet.
+
+#### Phase 3: Archive Backends (Weeks 6–8)
+
+**Goals:**
+- Migrate each backend (rsync, cifs, nfs, rclone, none) to TypeScript.
+- Implement real calls (spawn rsync, mount CIFS, etc.).
+- Backend-specific tests.
+
+**Deliverables:**
+- All 5 backends implemented, tested with mock data.
+- Integration tests for each backend.
+
+**Risk level:** Medium. First real I/O, but still test-only.
+
+#### Phase 4: API Layer (Weeks 9–11)
+
+**Goals:**
+- Implement Express web server.
+- Routes: status, logs, config, sync control, diagnostics.
+- Request/response validation via Zod.
+- OpenAPI spec generation.
+
+**Deliverables:**
+- `/api/status`, `/api/logs`, `/api/sync/trigger`, etc. all working.
+- OpenAPI 3.0 spec auto-generated.
+- Integration tests for API endpoints.
+
+**Risk level:** Low–Medium. API wraps orchestrator; safe to test in parallel.
+
+#### Phase 5: Frontend (Weeks 12–14)
+
+**Goals:**
+- Build React SPA with TypeScript.
+- Generate API client from OpenAPI spec.
+- Migrate existing UI features (status panel, logs viewer, sync trigger, diagnostics).
+
+**Deliverables:**
+- Full web UI in React/TS.
+- E2E tests using Playwright or Cypress.
+
+**Risk level:** Medium. Complex frontend logic, but orchestrator unaffected.
+
+#### Phase 6: Pi Deployment & Testing (Weeks 15–17)
+
+**Goals:**
+- Build and bundle for Pi deployment.
+- Docker image for reproducible builds.
+- Test on real Pi Zero (memory, CPU under load).
+- Rollback procedures and safety checks.
+
+**Deliverables:**
+- Docker image that runs on Pi.
+- Performance benchmarks (memory, CPU, latency).
+- Upgrade/migration guide for users on v1.x.
+- Rollback automation.
+
+**Risk level:** High. First real-device test; may need optimization.
+
+### Testing Strategy
+
+#### Unit Tests
+
+```bash
+pnpm test:unit
+# Covers: config validation, state manager, archive backend interface, orchestrator logic
+```
+
+#### Integration Tests
+
+```bash
+pnpm test:integration
+# Covers: orchestrator + mocked backends, API + state manager, end-to-end sync cycles
+```
+
+#### E2E Tests (Local)
+
+```bash
+pnpm test:e2e:local
+# Covers: full stack (orchestrator + API + frontend) with mocked archiveloop state
+# Docker compose spins up mock services, tests UI interactions
+```
+
+#### E2E Tests (Real Pi)
+
+```bash
+pnpm test:e2e:pi --host teslausb.lan
+# Covers: real device, real archiveloop, real sync cycles
+# Requires car to be at home with archive reachable
+```
+
+### Developer Setup (Local)
+
+```bash
+# Clone repo
+git clone https://github.com/your-fork/teslausb.git
+cd teslausb
+
+# Install dependencies
+pnpm install
+
+# Start dev environment (Docker Compose)
+docker-compose -f docker-compose.dev.yml up
+
+# In another terminal, run dev server
+pnpm dev
+
+# Visit http://localhost:3000 for frontend
+# API at http://localhost:3001/api
+
+# Run tests
+pnpm test
+pnpm test:watch
+```
+
+### Pi Deployment (v2.0)
+
+```bash
+# On device
+ssh root@teslausb.lan
+
+# Pull v2.0
+export REPO=your-fork
+export BRANCH=v2.0-ts
+/root/bin/setup-teslausb upgrade
+
+# Systemd unit runs compiled Node.js app
+systemctl status teslausb
+journalctl -u teslausb -f
+```
+
+The setup script downloads pre-built bundle (or builds on-device if needed).
+
+### Migration Path for v1.x Users
+
+1. **v1.x stays on `main-dev` branch.** Bash version receives critical bugfixes only.
+2. **v2.0 launches as `v2.0` branch** when ready.
+3. **Users opt-in:** Set `BRANCH=v2.0` and run upgrade.
+4. **Rollback:** Set `BRANCH=main-dev` and upgrade again.
+5. **After 6 months:** v1.x enters maintenance mode, v2.0 becomes default.
+
+**Backward compatibility:** v2.0 reads existing config (`/root/teslausb_setup_variables.conf`), respects existing layouts (`/backingfiles/`, `/mutable/`), so users don't lose data.
+
+### Performance & Resource Constraints
+
+**Target (Pi Zero, 512 MB RAM):**
+- Base Node.js app: ~50–70 MB.
+- Orchestrator + API + frontend: ~100–150 MB total (acceptable with swap).
+- CPU usage: <30% during idle, <70% during active sync (similar to v1.x bash).
+
+**Optimization techniques:**
+- Use `esbuild` for fast bundling.
+- Tree-shake unused code.
+- Use `pkg` to bundle Node.js + app into single binary.
+- Resource limits in systemd unit.
+
+**Validation checklist:**
+- [ ] Memory profiling during sustained archiveloop operation.
+- [ ] CPU profiling during concurrent snapshot + sync + web requests.
+- [ ] Startup time <10 seconds.
+- [ ] API response time <100ms (p99).
+
+### Key Benefits
+
+✅ **Type safety** from config loading to API responses.  
+✅ **Testability** with proper dependency injection and mocking.  
+✅ **Developer velocity** — IDE intellisense, auto-generation of API clients.  
+✅ **Maintainability** — single language, clear module boundaries, no bash quirks.  
+✅ **Extensibility** — easy to add new archive backends or API endpoints.  
+✅ **Monitoring** — structured logs, metrics, event tracing.
+
+### Risks & Mitigations
+
+| Risk | Mitigation |
+|------|-----------|
+| Node.js memory overhead on Pi Zero | Resource limits, profiling, fallback to v1.x if needed |
+| Regression in archiveloop reliability | Extensive unit/integration tests, staged rollout, monitoring |
+| Compilation complexity for Pi deployment | Pre-built binaries, Docker images, CI/CD automation |
+| Breaking changes for v1.x users | Clear migration guide, dual-branch support, rollback docs |
+| Onboarding overhead for new TS developers | Good docs, open PRs, code examples, ADRs (Architecture Decision Records) |
+
+### Success Criteria
+
+- ✅ All tests passing (unit + integration + e2e).
+- ✅ Deployed on real Pi Zero, 1 week of production use without crashes.
+- ✅ Performance parity with v1.x (memory, CPU, sync speed).
+- ✅ User upgrades from v1.x → v2.0 without data loss.
+- ✅ Rollback from v2.0 → v1.x works cleanly.
+- ✅ New contributors can add features within 1 day of onboarding.
