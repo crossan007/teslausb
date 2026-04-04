@@ -12,6 +12,7 @@ import { ClipDiscoveryLoop } from './clip-discovery-loop';
 import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend } from '../types/archive';
+import { ArchiveEventBus, ArchiveEventBusLike } from './events';
 
 /**
  * Controls polling cadence and lifecycle hook behavior around archive cycles.
@@ -27,6 +28,12 @@ export interface RuntimeLifecycleLoopOptions {
   reachabilityPollMs?: number;
   /** Optional cap for reachability checks (useful in tests). */
   maxReachabilityChecks?: number;
+  /** Title prefix used by legacy send-push-message hook. */
+  notificationTitle?: string;
+  /** Relative trigger file paths emitted at archive-start (optional, opt-in). */
+  startTriggerFilePaths?: string[];
+  /** Relative trigger file paths emitted at archive-finish (legacy-compatible default). */
+  finishTriggerFilePaths?: string[];
 }
 
 /**
@@ -59,6 +66,8 @@ export class RuntimeLifecycleLoop {
   private readonly syncStatusWriter: SyncStatusWriter;
   /** Logger used for runtime lifecycle events. */
   private readonly runtimeLogger: RuntimeLifecycleLogger;
+  /** Event bus used to emit lifecycle events. */
+  private readonly eventBus: ArchiveEventBusLike;
 
   /**
    * Builds a runtime lifecycle loop instance.
@@ -73,10 +82,12 @@ export class RuntimeLifecycleLoop {
     dependencies?: {
       syncStatusWriter?: SyncStatusWriter;
       runtimeLogger?: RuntimeLifecycleLogger;
+      eventBus?: ArchiveEventBusLike;
     },
   ) {
     this.syncStatusWriter = dependencies?.syncStatusWriter ?? stateManager;
     this.runtimeLogger = dependencies?.runtimeLogger ?? logger;
+    this.eventBus = dependencies?.eventBus ?? new ArchiveEventBus();
   }
 
   /**
@@ -124,8 +135,19 @@ export class RuntimeLifecycleLoop {
     }
 
     await this.trySyncTime();
+    await this.eventBus.publish({
+      type: 'archive-start',
+      occurredAtMs: Date.now(),
+      totalFiles: discoveryResult.pendingClips.totalFiles,
+      totalEvents: discoveryResult.pendingClips.totalEvents,
+      triggerFilePaths: this.options.startTriggerFilePaths ?? [],
+    });
+    await this.sendPushMessage(this.buildStartMessage(discoveryResult), 'start');
     await this.runHook('/root/bin/awake_start');
     await this.sleepMs(Math.max(0, this.options.archiveDelaySec) * 1000);
+
+    let cycleSucceeded = false;
+    let archivedMarkedCount = 0;
 
     try {
       let cycleResult;
@@ -134,6 +156,7 @@ export class RuntimeLifecycleLoop {
           fromPath: this.options.clipDiscoveryRoot,
           files: discoveryResult.filePaths,
         });
+        cycleSucceeded = Boolean(cycleResult && !cycleResult.skipped && cycleResult.failed === 0);
       } catch (error) {
         this.runtimeLogger.error({ error }, 'Archive cycle failed for discovery batch');
       }
@@ -146,9 +169,20 @@ export class RuntimeLifecycleLoop {
       if (archivedNow.length > 0) {
         await this.discoveryManager.markArchived(archivedNow, this.options.archivedListPath);
       }
+      archivedMarkedCount = archivedNow.length;
 
       this.runtimeLogger.info({ archivedMarked: archivedNow.length, result: cycleResult }, 'Archive cycle completed from lifecycle loop');
     } finally {
+      await this.eventBus.publish({
+        type: 'archive-finish',
+        occurredAtMs: Date.now(),
+        totalFiles: discoveryResult.pendingClips.totalFiles,
+        totalEvents: discoveryResult.pendingClips.totalEvents,
+        archivedFiles: archivedMarkedCount,
+        succeeded: cycleSucceeded,
+        triggerFilePaths: cycleSucceeded ? (this.options.finishTriggerFilePaths ?? []) : [],
+      });
+      await this.sendPushMessage(this.buildFinishMessage(archivedMarkedCount, cycleSucceeded), 'finish');
       await this.runHook('/root/bin/awake_stop');
     }
   }
@@ -210,6 +244,34 @@ export class RuntimeLifecycleLoop {
     if (result.code !== 0) {
       this.runtimeLogger.warn({ scriptPath, result }, 'Lifecycle hook failed');
     }
+  }
+
+  /**
+   * Sends a lifecycle push notification using legacy hook contract.
+   */
+  private async sendPushMessage(message: string, phase: 'start' | 'finish'): Promise<void> {
+    const title = this.options.notificationTitle ?? 'TeslaUSB';
+    const result = await this.commandRunner.run('/root/bin/send-push-message', [`${title}:`, message, phase]);
+    if (result.code !== 0) {
+      this.runtimeLogger.warn({ phase, result }, 'Push notification hook failed');
+    }
+  }
+
+  /**
+   * Builds start-phase notification text for an archive batch.
+   */
+  private buildStartMessage(discoveryResult: ClipDiscoveryResult): string {
+    const total = discoveryResult.pendingClips.totalFiles;
+    const events = discoveryResult.pendingClips.totalEvents;
+    return `Archiving ${total} file(s) including ${events} event folder(s) starting at ${new Date().toString()}`;
+  }
+
+  /**
+   * Builds finish-phase notification text for an archive batch.
+   */
+  private buildFinishMessage(archivedCount: number, succeeded: boolean): string {
+    const prefix = succeeded ? 'Archiving completed successfully.' : 'Error during archiving.';
+    return `${prefix} Archived ${archivedCount} file(s).`;
   }
 
   /**

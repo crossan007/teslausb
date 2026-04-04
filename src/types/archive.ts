@@ -16,6 +16,25 @@ export interface ArchiveTransferExecution {
   result: Promise<ArchiveTransferResult>;
 }
 
+/**
+ * Optional capability for archive backends that can write trigger files directly.
+ */
+export interface TriggerFileWritableArchiveBackend {
+  /**
+   * Writes one or more trigger files to the backend destination.
+   */
+  writeTriggerFiles(relativePaths: string[]): Promise<void>;
+}
+
+/**
+ * Returns true when the given backend supports direct trigger file writes.
+ */
+export function supportsTriggerFileWrites(
+  backend: ArchiveBackend,
+): backend is ArchiveBackend & TriggerFileWritableArchiveBackend {
+  return typeof (backend as Partial<TriggerFileWritableArchiveBackend>).writeTriggerFiles === 'function';
+}
+
 export function createCompletedTransferExecution(
   backend: string,
   filePaths: string[],

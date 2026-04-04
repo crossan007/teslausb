@@ -236,6 +236,8 @@ export CAM_SIZE=40G
 # Uncomment any TRIGGER_FILE_xxxxx below to create trigger file(s) in the
 # archive directory for the listed clip type after all clips have been
 # transferred for that type.
+# Note: finish trigger files are only created after a successful archive cycle.
+# If archiving fails, finish trigger files are not created.
 # e.g: export TRIGGER_FILE_SAVED=ARCHIVE_UPLOADED would create a file in
 # $ARCHIVE_BASE/SavedClips/ARCHIVE_UPLOADED.
 # Uncomment TRIGGER_FILE_ANY to create a trigger file in $ARCHIVE_BASE. This will
@@ -251,6 +253,14 @@ export CAM_SIZE=40G
 # export TRIGGER_FILE_SENTRY=ARCHIVE_UPLOADED
 # export TRIGGER_FILE_RECENT=ARCHIVE_UPLOADED
 # export TRIGGER_FILE_ANY=ARCHIVE_UPLOADED
+#
+# Optional (opt-in): also create start trigger files before transfer begins.
+# When enabled, TeslaUSB writes trigger files with a ".start" suffix in the
+# same relative paths as TRIGGER_FILE_* above.
+# These start trigger files may exist even when the archive cycle later fails.
+# They are additive and do not replace finish trigger files.
+# e.g. SavedClips/ARCHIVE_UPLOADED.start
+# export TRIGGER_FILE_START_ENABLED=true
 
 ################################################################################
 # !!!!!!!!!!!!!!!!!!!!!! IMPORTANT KEEP CAR AWAKE CHANGES !!!!!!!!!!!!!!!!!!!!!!

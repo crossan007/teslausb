@@ -7,6 +7,7 @@ import { ClipDiscoveryLoop } from './clip-discovery-loop';
 import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend } from '../types/archive';
+import { ArchiveEvent } from './events';
 
 class FakeCommandRunner implements CommandRunner {
   readonly calls: Array<{ command: string; args: string[] }> = [];
@@ -129,6 +130,7 @@ describe('RuntimeLifecycleLoop', () => {
     const runner = new FakeCommandRunner();
 
     const syncStatusWrites: SyncStatus[] = [];
+    const triggerEvents: ArchiveEvent[] = [];
 
     const loop = new RuntimeLifecycleLoop(
       discoveryLoop as unknown as ClipDiscoveryLoop,
@@ -153,6 +155,12 @@ describe('RuntimeLifecycleLoop', () => {
           warn: () => undefined,
           error: () => undefined,
         },
+        eventBus: {
+          publish: async (event: ArchiveEvent) => {
+            triggerEvents.push(event);
+          },
+          subscribe: () => () => undefined,
+        },
       },
     );
 
@@ -171,6 +179,8 @@ describe('RuntimeLifecycleLoop', () => {
     expect(manager.marked).toEqual(['SavedClips/evt1/file.mp4']);
     expect(runner.calls.map((call) => call.command)).toContain('/root/bin/awake_start');
     expect(runner.calls.map((call) => call.command)).toContain('/root/bin/awake_stop');
+    expect(runner.calls.map((call) => call.command)).toContain('/root/bin/send-push-message');
+    expect(triggerEvents.map((event) => event.type)).toEqual(['archive-start', 'archive-finish']);
     expect(syncStatusWrites.length).toBeGreaterThan(0);
 
     loop.stop();

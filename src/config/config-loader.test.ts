@@ -214,4 +214,21 @@ export RSYNC_SERVER='backup.server.com'
 
     expect(config.archiveServer).toBe('nfs.example.com');
   });
+
+  it('handles trigger file configuration', () => {
+    vi.stubEnv('TRIGGER_FILE_START_ENABLED', 'true');
+    vi.stubEnv('TRIGGER_FILE_SAVED', 'saved.trigger');
+    vi.stubEnv('TRIGGER_FILE_SENTRY', 'sentry.trigger');
+    vi.stubEnv('TRIGGER_FILE_RECENT', 'recent.trigger');
+    vi.stubEnv('TRIGGER_FILE_ANY', 'all.trigger');
+
+    configLoader = new ConfigLoader('/nonexistent/path');
+    const config = configLoader.load();
+
+    expect(config.triggerFileStartEnabled).toBe(true);
+    expect(config.triggerFileSaved).toBe('saved.trigger');
+    expect(config.triggerFileSentry).toBe('sentry.trigger');
+    expect(config.triggerFileRecent).toBe('recent.trigger');
+    expect(config.triggerFileAny).toBe('all.trigger');
+  });
 });

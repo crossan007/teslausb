@@ -132,4 +132,26 @@ describe('RsyncBackend', () => {
 
     await expect(backend.archiveClips('/mnt/cam', ['SavedClips/a.mp4']).result).rejects.toThrow('rsync failed hard');
   });
+
+  it('writes trigger files directly via backend capability', async () => {
+    const runner = new MockCommandRunner();
+    runner.setResult('rsync', { code: 0, stdout: '', stderr: '' });
+
+    const backend = new RsyncBackend(
+      { rsyncServer: 'host', rsyncUser: 'user', rsyncPath: '/archive' },
+      runner,
+      { tempRootDir: '/tmp' },
+    );
+
+    await backend.writeTriggerFiles([
+      'SavedClips/saved.trigger',
+      'all.trigger',
+    ]);
+
+    expect(runner.calls).toHaveLength(1);
+    expect(runner.calls[0].command).toBe('rsync');
+    expect(runner.calls[0].args).toContain('user@host:/archive');
+    expect(runner.calls[0].args.join(' ')).toContain('trigger-files.txt');
+  });
+
 });

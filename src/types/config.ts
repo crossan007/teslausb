@@ -39,6 +39,11 @@ export const ConfigSchema = z.object({
   archiveSentryclips: z.boolean().default(true),
   archiveTrackmodeclips: z.boolean().default(true),
   archiveRecentclips: z.boolean().default(false),
+  triggerFileStartEnabled: z.boolean().default(false),
+  triggerFileSaved: z.string().optional(),
+  triggerFileSentry: z.string().optional(),
+  triggerFileRecent: z.string().optional(),
+  triggerFileAny: z.string().optional(),
 
   // Tesla API integration
   teslaEmail: z.string().optional(),

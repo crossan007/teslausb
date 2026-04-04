@@ -6,9 +6,9 @@
  * - run/rsync_archive/archive-clips.sh
  * - run/rsync_archive/disconnect-archive.sh
  */
-import { rm, mkdtemp, writeFile } from 'fs/promises';
+import { mkdir, rm, mkdtemp, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { ReplaySubject } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -59,6 +59,49 @@ export class RsyncBackend implements ArchiveBackend {
     return;
   }
 
+  /**
+   * Writes trigger files directly to archive destination for legacy compatibility.
+   */
+  async writeTriggerFiles(relativePaths: string[]): Promise<void> {
+    if (relativePaths.length === 0) {
+      return;
+    }
+
+    const { rsyncServer, rsyncUser, rsyncPath } = this.requireConfig();
+    const destination = `${rsyncUser}@${rsyncServer}:${rsyncPath}`;
+    const tempDir = await mkdtemp(join(this.options.tempRootDir ?? tmpdir(), 'teslausb-trigger-'));
+    const triggerRoot = join(tempDir, 'triggers');
+    const triggerListPath = join(tempDir, 'trigger-files.txt');
+
+    try {
+      for (const triggerPath of relativePaths) {
+        const triggerAbsolutePath = join(triggerRoot, triggerPath);
+        await mkdir(dirname(triggerAbsolutePath), { recursive: true });
+        await writeFile(triggerAbsolutePath, '', 'utf-8');
+      }
+
+      await writeFile(triggerListPath, `${relativePaths.join('\n')}\n`, 'utf-8');
+
+      const result = await this.commandRunner.run('rsync', [
+        '-avhRL',
+        '--timeout=60',
+        '--no-perms',
+        '--omit-dir-times',
+        '--stats',
+        '--ignore-missing-args',
+        `--files-from=${triggerListPath}`,
+        triggerRoot,
+        destination,
+      ]);
+
+      if (result.code !== 0 && result.code !== 24) {
+        throw new Error(result.stderr || result.stdout || `rsync trigger transfer failed with exit code ${result.code}`);
+      }
+    } finally {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
   archiveClips(fromPath: string, filePaths: string[], options?: ArchiveTransferOptions): ArchiveTransferExecution {
     const { rsyncServer, rsyncUser, rsyncPath } = this.requireConfig();
 
@@ -73,6 +116,7 @@ export class RsyncBackend implements ArchiveBackend {
     const result = (async (): Promise<ArchiveTransferResult> => {
       const tempDir = await mkdtemp(join(this.options.tempRootDir ?? tmpdir(), 'teslausb-rsync-'));
       const fileListPath = join(tempDir, 'files-from.txt');
+      const destination = `${rsyncUser}@${rsyncServer}:${rsyncPath}`;
 
       try {
         await writeFile(fileListPath, `${filePaths.join('\n')}\n`, 'utf-8');
@@ -88,7 +132,7 @@ export class RsyncBackend implements ArchiveBackend {
           '--ignore-missing-args',
           `--files-from=${fileListPath}`,
           fromPath,
-          `${rsyncUser}@${rsyncServer}:${rsyncPath}`,
+          destination,
         ], {
           onStdoutLine: (line) => {
             this.handleProgressLine(line, session, subject);

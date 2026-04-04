@@ -5,11 +5,12 @@
 import { configLoader } from '../config';
 import { logger, stateManager } from '../core';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
-import { ArchiveBackend } from '../types';
+import { ArchiveBackend, supportsTriggerFileWrites } from '../types';
 import { ClipDiscoveryManager } from './clip-discovery-manager';
 import { ClipDiscoveryLoop } from './clip-discovery-loop';
 import { RsyncBackend } from './backends';
 import { RuntimeLifecycleLoop } from './runtime-lifecycle-loop';
+import { ArchiveEventBus } from './events';
 
 const CLIP_DISCOVERY_ROOT = '/mutable/TeslaCam';
 const ARCHIVED_LIST_PATH = '/mutable/sentry_files_archived';
@@ -33,9 +34,63 @@ function createArchiveBackend(config: ReturnType<typeof configLoader.get>): Arch
   }
 }
 
+/**
+ * Builds legacy trigger file relative paths from configuration.
+ */
+function buildFinishTriggerFilePaths(config: ReturnType<typeof configLoader.get>): string[] {
+  const triggerFilePaths: string[] = [];
+
+  if (config.triggerFileSaved) {
+    triggerFilePaths.push(`SavedClips/${config.triggerFileSaved}`);
+  }
+  if (config.triggerFileSentry) {
+    triggerFilePaths.push(`SentryClips/${config.triggerFileSentry}`);
+  }
+  if (config.triggerFileRecent) {
+    triggerFilePaths.push(`RecentClips/${config.triggerFileRecent}`);
+  }
+  if (config.triggerFileAny) {
+    triggerFilePaths.push(config.triggerFileAny);
+  }
+
+  return triggerFilePaths;
+}
+
+/**
+ * Builds optional archive-start trigger paths by suffixing finish trigger names.
+ */
+function buildStartTriggerFilePaths(finishTriggerFilePaths: string[]): string[] {
+  return finishTriggerFilePaths.map((path) => `${path}.start`);
+}
+
 async function main(): Promise<void> {
   const config = configLoader.get();
   const backend = createArchiveBackend(config);
+  const finishTriggerFilePaths = buildFinishTriggerFilePaths(config);
+  const startTriggerFilePaths = config.triggerFileStartEnabled
+    ? buildStartTriggerFilePaths(finishTriggerFilePaths)
+    : [];
+  const eventBus = new ArchiveEventBus();
+  eventBus.subscribe(async (event) => {
+    if (event.type !== 'archive-start' && event.type !== 'archive-finish') {
+      return;
+    }
+
+    if (event.type === 'archive-finish' && !event.succeeded) {
+      return;
+    }
+
+    const triggerPaths = event.triggerFilePaths ?? [];
+    if (triggerPaths.length === 0) {
+      return;
+    }
+
+    if (!supportsTriggerFileWrites(backend)) {
+      return;
+    }
+
+    await backend.writeTriggerFiles(triggerPaths);
+  });
   const discovery = new ClipDiscoveryManager();
   const clipArchiveCoordinator = new ClipArchiveCoordinator(backend, undefined, undefined, stateManager);
   const discoveryLoop = new ClipDiscoveryLoop(discovery, {
@@ -57,6 +112,13 @@ async function main(): Promise<void> {
       clipDiscoveryRoot: CLIP_DISCOVERY_ROOT,
       archivedListPath: ARCHIVED_LIST_PATH,
       archiveDelaySec: config.archiveDelay,
+      notificationTitle: config.notificationTitle,
+      startTriggerFilePaths,
+      finishTriggerFilePaths,
+    },
+    undefined,
+    {
+      eventBus,
     },
   );
 
