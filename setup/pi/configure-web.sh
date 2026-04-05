@@ -30,9 +30,13 @@ echo "mount.ctts#/mutable/TeslaCam /mnt/TeslaCam fuse defaults,nofail,x-systemd.
 
 # Static SPA directory served by Express
 mkdir -p /root/teslausb-node/html
-find /root/teslausb-node/html -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-cp -r "$SOURCE_DIR/teslausb-www/html/." /root/teslausb-node/html/
-setup_progress "web static assets deployed from repository sources"
+if [ -f /root/teslausb-node/html/index.html ]
+then
+  setup_progress "using compiled SPA assets from /root/teslausb-node/html"
+else
+  cp -r "$SOURCE_DIR/teslausb-www/html/." /root/teslausb-node/html/
+  setup_progress "no compiled SPA assets found; deployed fallback static assets from repository sources"
+fi
 
 # Write web auth credentials into the config file so ConfigLoader picks them up.
 # Existing WEB_USERNAME/WEB_PASSWORD entries are replaced.

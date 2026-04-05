@@ -873,6 +873,10 @@ function install_node_backend_runtime() {
   then
     cp "$SOURCE_DIR/tsconfig.json" "$app_dir/"
   fi
+  if [ -e "$SOURCE_DIR/vite.config.ts" ]
+  then
+    cp "$SOURCE_DIR/vite.config.ts" "$app_dir/"
+  fi
 
   log_progress "Installing node backend packages"
   pushd "$app_dir" > /dev/null

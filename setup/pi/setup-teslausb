@@ -853,6 +853,10 @@ function cmd_update_web_apply {
   then
     cp "$SOURCE_DIR/tsconfig.json" "$app_dir/"
   fi
+  if [ -e "$SOURCE_DIR/vite.config.ts" ]
+  then
+    cp "$SOURCE_DIR/vite.config.ts" "$app_dir/"
+  fi
 
   setup_progress "update_web: deploying updated run/ scripts to /root/bin"
   find "$SOURCE_DIR/run" -maxdepth 1 -type f -exec cp {} /root/bin/ \;
