@@ -1,7 +1,7 @@
 import { TransferSessionView, FileTransferProgress } from './types';
 import { BaseViewService } from './base-view-service';
 import { ArchiveEventBusLike } from '../orchestrator/events';
-import { PendingClips } from '../../types';
+import { PendingClips, TransferSession } from '../../types';
 
 /**
  * Tracks current transferring batch and file-level progress
@@ -143,6 +143,48 @@ export class TransferSessionViewService extends BaseViewService<TransferSessionV
    */
   getAllFilesProgress(): FileTransferProgress[] {
     return Array.from(this.fileProgress.values());
+  }
+
+  /**
+   * Projects persisted transfer session state into the web view model.
+   */
+  applyTransferSession(session: TransferSession): void {
+    this.currentSession.isActive =
+      session.phase === 'starting' ||
+      session.phase === 'transferring' ||
+      session.phase === 'finalizing';
+    this.currentSession.totalFilesInBatch = session.filesTotal;
+    this.currentSession.filesCompleted = session.filesCompleted;
+    this.currentSession.filesFailed = session.filesFailed;
+    this.currentSession.startedAtEpoch = session.startedAt;
+    this.currentSession.overallProgressPercent = session.batchPercent ?? this.currentSession.overallProgressPercent;
+
+    this.fileProgress.clear();
+    for (const file of session.files) {
+      const status: FileTransferProgress['status'] =
+        file.status === 'completed'
+          ? 'archived'
+          : file.status === 'transferring'
+            ? 'transferring'
+            : file.status === 'failed'
+              ? 'failed'
+              : 'pending';
+
+      this.fileProgress.set(file.path, {
+        relPath: file.path,
+        isSymlink: true,
+        ageSec: 0,
+        status,
+        totalBytes: file.totalBytes,
+        transferredBytes: file.bytesTransferred,
+        progressPercent: file.percent,
+      });
+    }
+
+    const currentFilePath = session.currentFilePath;
+    this.currentFile = currentFilePath ? this.fileProgress.get(currentFilePath) : undefined;
+
+    this.emit();
   }
 
   private handleArchiveStart(totalFiles: number): void {

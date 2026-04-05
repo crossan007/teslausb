@@ -1,4 +1,5 @@
 import { logger } from '../core/logger';
+import { stateManager } from '../core';
 import { ArchiveEventBusLike } from '../orchestrator/events';
 import { SystemStatusManager } from '../core/system-status-manager';
 import { TeslaUSBConfig } from '../../types';
@@ -17,6 +18,7 @@ export class WebServerIntegration {
   private webServer: WebServer;
   private transferSessionView: TransferSessionViewService;
   private snapshotListView: SnapshotListViewService;
+  private statePollTimer: NodeJS.Timeout | undefined;
 
   constructor(
     eventBus: ArchiveEventBusLike,
@@ -66,8 +68,17 @@ export class WebServerIntegration {
   }
 
   private setupStateWiring(): void {
-    // Hook into state manager to observe pending clips changes
-    // This would be an observer on the state manager firing updates to transfer view
+    this.statePollTimer = setInterval(() => {
+      const pending = stateManager.readPendingClips();
+      if (pending) {
+        this.transferSessionView.setPendingClips(pending);
+      }
+
+      const transferSession = stateManager.readTransferSession();
+      if (transferSession) {
+        this.transferSessionView.applyTransferSession(transferSession);
+      }
+    }, 1000);
   }
 
   async start(): Promise<void> {
@@ -75,6 +86,10 @@ export class WebServerIntegration {
   }
 
   async stop(): Promise<void> {
+    if (this.statePollTimer) {
+      clearInterval(this.statePollTimer);
+      this.statePollTimer = undefined;
+    }
     await this.webServer.stop();
   }
 
