@@ -17,8 +17,6 @@ import { SnapshotEventCoordinator } from './snapshot-event-coordinator';
 import { ArchiveEventBus, PushMessageEventHandler, TeslaApiInteropEventHandler } from './events';
 
 const ARCHIVED_LIST_PATH = '/mutable/sentry_files_archived';
-const CHANGE_DETECT_POLL_MS = 1_000;
-const SNAPSHOT_DEBOUNCE_MS = 1_500;
 const CAM_DISK_PATH = '/backingfiles/cam_disk.bin';
 
 function createArchiveBackend(config: ReturnType<typeof configLoader.get>): ArchiveBackend {
@@ -81,13 +79,11 @@ async function main(): Promise<void> {
   const snapshotManager = new SnapshotManager();
   const snapshotEventCoordinator = new SnapshotEventCoordinator({
     eventBus,
-    snapshotManager,
-    debounceMs: SNAPSHOT_DEBOUNCE_MS,
+    snapshotManager
   });
   const backingImageChangeDetector = new BackingImageChangeDetector({
     imagePath: CAM_DISK_PATH,
     eventBus,
-    pollIntervalMs: CHANGE_DETECT_POLL_MS,
     emitInitialEvent: true,
   });
   const pushMessageEventHandler = new PushMessageEventHandler(config.notificationTitle);
@@ -150,7 +146,7 @@ async function main(): Promise<void> {
   snapshotEventCoordinator.start();
   backingImageChangeDetector.start();
   lifecycleLoop.start();
-  logger.info({ pollIntervalMs: CHANGE_DETECT_POLL_MS, debounceMs: SNAPSHOT_DEBOUNCE_MS }, 'Clip discovery loop started');
+  logger.info('Clip discovery loop started');
 
   await new Promise<void>(() => {
     // Keep service alive; discovery loop and subscriptions drive execution.

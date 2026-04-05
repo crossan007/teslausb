@@ -1,4 +1,5 @@
 import { stat } from 'fs/promises';
+import { Subject, Subscription, exhaustMap, timer } from 'rxjs';
 import { logger } from '../core/logger';
 import { ArchiveEventBusLike } from './events';
 
@@ -17,14 +18,15 @@ export class BackingImageChangeDetector {
   private readonly emitInitialEvent: boolean;
   private readonly statProvider: (path: string) => Promise<{ size: number; mtimeMs: number }>;
   private running = false;
-  private timer: NodeJS.Timeout | null = null;
-  private inFlight = false;
+  private pollSubscription: Subscription | null = null;
+  private readonly manualPoll$ = new Subject<void>();
+  private manualPollSubscription: Subscription | null = null;
   private lastFingerprint = '';
 
   constructor(options: BackingImageChangeDetectorOptions) {
     this.imagePath = options.imagePath;
     this.eventBus = options.eventBus;
-    this.pollIntervalMs = Math.max(100, options.pollIntervalMs ?? 1000);
+    this.pollIntervalMs = (options.pollIntervalMs ?? 100);
     this.emitInitialEvent = options.emitInitialEvent ?? true;
     this.statProvider = options.statProvider ?? (async (path) => stat(path));
   }
@@ -33,24 +35,31 @@ export class BackingImageChangeDetector {
     if (this.running) {
       return;
     }
+
     this.running = true;
-    void this.pollNow();
+    this.pollSubscription = timer(0, this.pollIntervalMs)
+      .pipe(exhaustMap(async () => this.pollNow()))
+      .subscribe();
+
+    this.manualPollSubscription = this.manualPoll$
+      .pipe(exhaustMap(async () => this.pollNow()))
+      .subscribe();
   }
 
   stop(): void {
     this.running = false;
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
+    this.pollSubscription?.unsubscribe();
+    this.pollSubscription = null;
+    this.manualPollSubscription?.unsubscribe();
+    this.manualPollSubscription = null;
   }
 
-  async pollNow(): Promise<void> {
-    if (this.inFlight) {
+  async pollNow(scheduleWhenRunning = false): Promise<void> {
+    if (scheduleWhenRunning && this.running) {
+      this.manualPoll$.next();
       return;
     }
 
-    this.inFlight = true;
     try {
       const current = await this.statProvider(this.imagePath);
       const fingerprint = `${current.size}:${Math.floor(current.mtimeMs)}`;
@@ -72,23 +81,6 @@ export class BackingImageChangeDetector {
       }
     } catch (error) {
       logger.warn({ err: error, imagePath: this.imagePath }, 'Backing image change poll failed');
-    } finally {
-      this.inFlight = false;
-      this.scheduleNext();
     }
-  }
-
-  private scheduleNext(): void {
-    if (!this.running) {
-      return;
-    }
-
-    if (this.timer) {
-      clearTimeout(this.timer);
-    }
-
-    this.timer = setTimeout(() => {
-      void this.pollNow();
-    }, this.pollIntervalMs);
   }
 }
