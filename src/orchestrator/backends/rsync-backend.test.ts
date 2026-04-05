@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { RsyncBackend } from './rsync-backend';
 import { CommandRunner, CommandResult, StreamingCommandHandlers } from '../../shared/command-runner';
 import { TransferSession } from '../../types';
+import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
+import { join } from 'path';
+import { tmpdir } from 'os';
 
 class MockCommandRunner implements CommandRunner {
   calls: Array<{ command: string; args: string[] }> = [];
@@ -117,6 +120,43 @@ describe('RsyncBackend', () => {
 
     const result = await backend.archiveClips('/mnt/cam', ['SavedClips/a.mp4']).result;
     expect(result.archived).toBe(1);
+  });
+
+  it('fills transfer bytes from source file size when rsync telemetry is sparse', async () => {
+    const sourceRoot = await mkdtemp(join(tmpdir(), 'teslausb-rsync-bytes-'));
+    const relPath = 'RecentClips/small.mp4';
+    const sourcePath = join(sourceRoot, relPath);
+
+    await mkdir(join(sourceRoot, 'RecentClips'), { recursive: true });
+    await writeFile(sourcePath, 'hello');
+
+    const runner = new MockCommandRunner();
+    runner.setResult('rsync', { code: 0, stdout: '', stderr: '' });
+    runner.setStreamLines('rsync', { stdout: [relPath] });
+
+    const backend = new RsyncBackend(
+      { rsyncServer: 'host', rsyncUser: 'user', rsyncPath: '/archive' },
+      runner,
+      { tempRootDir: '/tmp' },
+    );
+
+    const sessions: TransferSession[] = [];
+    const transfer = backend.archiveClips(sourceRoot, [relPath]);
+    const subscription = transfer.session$.subscribe((session: TransferSession) => {
+      sessions.push(session);
+    });
+
+    try {
+      const result = await transfer.result;
+      expect(result.archived).toBe(1);
+      const finalSession = sessions.at(-1);
+      expect(finalSession?.bytesTransferred).toBe(5);
+      expect(finalSession?.files[0].bytesTransferred).toBe(5);
+      expect(finalSession?.files[0].totalBytes).toBe(5);
+    } finally {
+      subscription.unsubscribe();
+      await rm(sourceRoot, { recursive: true, force: true });
+    }
   });
 
   it('throws when rsync fails', async () => {

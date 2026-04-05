@@ -6,7 +6,7 @@
  * - run/rsync_archive/archive-clips.sh
  * - run/rsync_archive/disconnect-archive.sh
  */
-import { mkdir, rm, mkdtemp, writeFile } from 'fs/promises';
+import { mkdir, rm, mkdtemp, stat, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { ReplaySubject } from 'rxjs';
@@ -119,6 +119,7 @@ export class RsyncBackend implements ArchiveBackend {
       const destination = `${rsyncUser}@${rsyncServer}:${rsyncPath}`;
 
       try {
+        await this.hydrateTransferFileSizes(fromPath, session);
         await writeFile(fileListPath, `${filePaths.join('\n')}\n`, 'utf-8');
 
         const commandResult = await this.commandRunner.runStreaming('rsync', [
@@ -230,21 +231,24 @@ export class RsyncBackend implements ArchiveBackend {
       return;
     }
 
-    const progressMatch = trimmed.match(/^([\d,]+)\s+(\d+)%\s+([^\s]+)\s+([^\s]+)\s+\(xfr#(\d+),\s*to-chk=(\d+)\/(\d+)\)$/);
+    const progressMatch = trimmed.match(/^([\d,]+)\s+(\d+)%\s+([^\s]+)\s+([^\s]+)(?:\s+\(xfr#(\d+),\s*to-chk=(\d+)\/(\d+)\))?$/);
     if (progressMatch) {
       const [, transferred, percent, rate, eta, xfrCount] = progressMatch;
+      const parsedPercent = Number(percent);
       session.phase = 'transferring';
       session.bytesTransferred = this.parseIntegerWithCommas(transferred);
-      session.batchPercent = Number(percent);
-      session.filesCompleted = Math.max(session.filesCompleted, Number(xfrCount));
+      session.batchPercent = parsedPercent;
+      if (xfrCount) {
+        session.filesCompleted = Math.max(session.filesCompleted, Number(xfrCount));
+      }
       session.updatedAt = Date.now();
 
       if (session.currentFilePath) {
         const file = this.findFile(session, session.currentFilePath);
         if (file) {
-          file.status = Number(percent) >= 100 ? 'completed' : 'transferring';
-          file.bytesTransferred = session.bytesTransferred;
-          file.percent = Number(percent);
+          file.status = parsedPercent >= 100 ? 'completed' : 'transferring';
+          file.bytesTransferred = this.resolvePerFileTransferredBytes(file, session.bytesTransferred, parsedPercent);
+          file.percent = parsedPercent;
           file.speedBytesPerSec = this.parseRate(rate);
           file.etaSeconds = this.parseEta(eta);
           file.updatedAt = session.updatedAt;
@@ -276,10 +280,20 @@ export class RsyncBackend implements ArchiveBackend {
       if (file.status === 'queued' || file.status === 'transferring') {
         file.status = 'completed';
         file.percent = 100;
+        if ((file.bytesTransferred ?? 0) === 0 && file.totalBytes !== undefined) {
+          file.bytesTransferred = file.totalBytes;
+        }
         file.updatedAt = now;
       }
     }
     session.filesCompleted = session.files.length - session.filesFailed;
+
+    if ((session.bytesTransferred ?? 0) === 0) {
+      const totalKnownBytes = session.files.reduce((sum, file) => sum + (file.totalBytes ?? 0), 0);
+      if (totalKnownBytes > 0) {
+        session.bytesTransferred = totalKnownBytes;
+      }
+    }
   }
 
   private markCurrentFileFailed(session: TransferSession, error: string): void {
@@ -328,5 +342,27 @@ export class RsyncBackend implements ArchiveBackend {
       return segments[0] * 3600 + segments[1] * 60 + segments[2];
     }
     return undefined;
+  }
+
+  private resolvePerFileTransferredBytes(
+    file: TransferFileProgress,
+    fallbackBytesTransferred: number,
+    percent: number,
+  ): number {
+    if (file.totalBytes !== undefined) {
+      return Math.min(file.totalBytes, Math.floor((file.totalBytes * percent) / 100));
+    }
+    return fallbackBytesTransferred;
+  }
+
+  private async hydrateTransferFileSizes(fromPath: string, session: TransferSession): Promise<void> {
+    await Promise.all(session.files.map(async (file) => {
+      try {
+        const fileStats = await stat(join(fromPath, file.path));
+        file.totalBytes = fileStats.size;
+      } catch {
+        // Best effort only; transfer can continue without file size hints.
+      }
+    }));
   }
 }
