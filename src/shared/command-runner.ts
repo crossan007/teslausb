@@ -46,7 +46,7 @@ export class ChildProcessCommandRunner implements CommandRunner {
       let stderrBuffer = '';
 
       const flushLines = (buffer: string, emit?: (line: string) => void): string => {
-        const lines = buffer.split(/\r?\n/);
+        const lines = buffer.split(/\r\n|\r|\n/);
         const remaining = lines.pop() ?? '';
         for (const line of lines) {
           emit?.(line);
