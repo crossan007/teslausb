@@ -43,9 +43,18 @@ export default function App() {
 
       <main className="App-main">
         <div className="dashboard-grid">
-          <SystemStatusComponent />
-          <TransferSessionComponent wsMessage={wsResult.lastMessage} />
-          <SnapshotsComponent wsMessage={wsResult.lastMessage} />
+          <SystemStatusComponent
+            wsMessage={wsResult.lastMessage}
+            wsConnected={wsResult.isConnected}
+          />
+          <TransferSessionComponent
+            wsMessage={wsResult.lastMessage}
+            wsConnected={wsResult.isConnected}
+          />
+          <SnapshotsComponent
+            wsMessage={wsResult.lastMessage}
+            wsConnected={wsResult.isConnected}
+          />
         </div>
       </main>
 

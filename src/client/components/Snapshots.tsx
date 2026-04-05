@@ -4,12 +4,16 @@ import { SnapshotView } from '../../view-services/types';
 
 interface Props {
   wsMessage?: any;
+  wsConnected: boolean;
 }
 
-export default function SnapshotsComponent({ wsMessage }: Props) {
+export default function SnapshotsComponent({ wsMessage, wsConnected }: Props) {
   const { data: restData } = useApi<SnapshotView[]>(
     '/api/snapshots',
-    { interval: 3000 },
+    {
+      interval: 5000,
+      enabled: !wsConnected,
+    },
   );
 
   // Prefer WebSocket data if available

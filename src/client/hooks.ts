@@ -6,7 +6,7 @@ import { getConfig } from './config';
  */
 export function useApi<T>(
   endpoint: string,
-  options: { interval?: number } = {},
+  options: { interval?: number; enabled?: boolean } = {},
 ) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,6 +36,11 @@ export function useApi<T>(
   }, [endpoint]);
 
   useEffect(() => {
+    if (options.enabled === false) {
+      setLoading(false);
+      return;
+    }
+
     fetch();
 
     if (options.interval) {

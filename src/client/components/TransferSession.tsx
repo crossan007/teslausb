@@ -4,12 +4,16 @@ import { TransferSessionView } from '../../view-services/types';
 
 interface Props {
   wsMessage?: any;
+  wsConnected: boolean;
 }
 
-export default function TransferSessionComponent({ wsMessage }: Props) {
+export default function TransferSessionComponent({ wsMessage, wsConnected }: Props) {
   const { data: restData } = useApi<TransferSessionView>(
     '/api/transfer-session',
-    { interval: 2000 },
+    {
+      interval: 5000,
+      enabled: !wsConnected,
+    },
   );
 
   // Prefer WebSocket data if available

@@ -2,10 +2,20 @@ import React from 'react';
 import { useApi } from '../hooks';
 import { SystemStatus } from '../../../types';
 
-export default function SystemStatusComponent() {
-  const { data, loading, error } = useApi<SystemStatus>('/api/system-status', {
-    interval: 5000,
+interface Props {
+  wsMessage?: any;
+  wsConnected: boolean;
+}
+
+export default function SystemStatusComponent({ wsMessage, wsConnected }: Props) {
+  const { data: restData, loading, error } = useApi<SystemStatus>('/api/system-status', {
+    interval: 10000,
+    enabled: !wsConnected,
   });
+
+  const data = wsMessage?.type === 'system-status-update' && wsMessage?.data
+    ? (wsMessage.data as SystemStatus)
+    : restData;
 
   if (loading && !data) {
     return <div className="panel system-status loading">Loading system status...</div>;
