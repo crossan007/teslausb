@@ -232,12 +232,15 @@ export class RsyncBackend implements ArchiveBackend {
       return;
     }
 
-    const progressMatch = trimmed.match(/^([\d,]+)\s+(\d+)%\s+([^\s]+)\s+([^\s]+)(?:\s+\((?:xfr#(\d+),\s*)?(?:to|ir)-chk=(\d+)\/(\d+)\))?$/);
+    const progressMatch = trimmed.match(/^([^\s]+)\s+(\d+)%\s+([^\s]+)\s+([^\s]+)(?:\s+\((?:xfr#(\d+),\s*)?(?:to|ir)-chk=(\d+)\/(\d+)\))?$/);
     if (progressMatch) {
       const [, transferred, percent, rate, eta, xfrCount] = progressMatch;
       const parsedPercent = Number(percent);
       session.phase = 'transferring';
-      session.bytesTransferred = this.parseIntegerWithCommas(transferred);
+      const parsedTransferred = this.parseTransferredBytes(transferred);
+      if (parsedTransferred !== undefined) {
+        session.bytesTransferred = parsedTransferred;
+      }
       session.batchPercent = parsedPercent;
       if (xfrCount) {
         session.filesCompleted = Math.max(session.filesCompleted, Number(xfrCount));
@@ -312,6 +315,36 @@ export class RsyncBackend implements ArchiveBackend {
 
   private parseIntegerWithCommas(value: string): number {
     return Number(value.replace(/,/g, ''));
+  }
+
+  private parseTransferredBytes(value: string): number | undefined {
+    const plain = this.parseIntegerWithCommas(value);
+    if (Number.isFinite(plain)) {
+      return plain;
+    }
+
+    const humanMatch = value.match(/^([\d.]+)([kMGTPE]?)(?:i?B?)$/i);
+    if (!humanMatch) {
+      return undefined;
+    }
+
+    const numeric = Number(humanMatch[1]);
+    if (!Number.isFinite(numeric)) {
+      return undefined;
+    }
+
+    const unit = humanMatch[2].toUpperCase();
+    const multiplier: Record<string, number> = {
+      '': 1,
+      K: 1024,
+      M: 1024 * 1024,
+      G: 1024 * 1024 * 1024,
+      T: 1024 * 1024 * 1024 * 1024,
+      P: 1024 * 1024 * 1024 * 1024 * 1024,
+      E: 1024 * 1024 * 1024 * 1024 * 1024 * 1024,
+    };
+
+    return Math.floor(numeric * (multiplier[unit] ?? 1));
   }
 
   private parseRate(value: string): number | undefined {

@@ -155,6 +155,51 @@ describe('RsyncBackend', () => {
     }
   });
 
+  it('parses human-readable transferred-byte tokens from rsync progress lines', async () => {
+    const sourceRoot = await mkdtemp(join(tmpdir(), 'teslausb-rsync-humanbytes-'));
+    const relPath = 'RecentClips/human.mp4';
+    const sourcePath = join(sourceRoot, relPath);
+
+    await mkdir(join(sourceRoot, 'RecentClips'), { recursive: true });
+    await writeFile(sourcePath, 'x'.repeat(100));
+
+    const runner = new MockCommandRunner();
+    runner.setResult('rsync', { code: 0, stdout: '', stderr: '' });
+    runner.setStreamLines('rsync', {
+      stdout: [
+        relPath,
+        '1.0M 40% 2.00MB/s 0:00:01 (xfr#0, ir-chk=1/2)',
+      ],
+    });
+
+    const backend = new RsyncBackend(
+      { rsyncServer: 'host', rsyncUser: 'user', rsyncPath: '/archive' },
+      runner,
+      { tempRootDir: '/tmp' },
+    );
+
+    const sessions: TransferSession[] = [];
+    const transfer = backend.archiveClips(sourceRoot, [relPath]);
+    const subscription = transfer.session$.subscribe((session: TransferSession) => {
+      sessions.push(session);
+    });
+
+    try {
+      await transfer.result;
+
+      const sessionWithProgress = sessions.find((session) =>
+        session.phase === 'transferring' && (session.batchPercent ?? 0) === 40,
+      );
+
+      expect(sessionWithProgress).toBeDefined();
+      expect((sessionWithProgress?.bytesTransferred ?? 0)).toBeGreaterThan(1_000_000);
+      expect((sessionWithProgress?.files[0]?.bytesTransferred ?? 0)).toBeGreaterThan(30);
+    } finally {
+      subscription.unsubscribe();
+      await rm(sourceRoot, { recursive: true, force: true });
+    }
+  });
+
   it('treats rsync exit code 24 as success', async () => {
     const runner = new MockCommandRunner();
     runner.setResult('rsync', { code: 24, stdout: '', stderr: '' });
