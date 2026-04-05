@@ -102,6 +102,7 @@ describe('RsyncBackend', () => {
     expect(runner.calls.at(-1)?.args).toContain('/mnt/cam');
     expect(runner.calls.at(-1)?.args).toContain('user@host:/archive');
     expect(runner.calls.at(-1)?.args).toContain('--info=progress2,name');
+    expect(runner.calls.at(-1)?.args).toContain('--outbuf=L');
     expect(sessions.length).toBeGreaterThan(1);
     expect(sessions.at(-1)?.phase).toBe('completed');
     expect(sessions.at(-1)?.filesCompleted).toBe(2);

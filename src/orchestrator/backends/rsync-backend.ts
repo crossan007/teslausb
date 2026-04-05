@@ -124,6 +124,7 @@ export class RsyncBackend implements ArchiveBackend {
 
         const commandResult = await this.commandRunner.runStreaming('rsync', [
           '-avhRL',
+          '--outbuf=L',
           '--timeout=60',
           '--remove-source-files',
           '--no-perms',
