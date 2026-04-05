@@ -21,7 +21,7 @@ import {
   createCompletedTransferExecution,
   TransferFileProgress,
   TransferSession,
-} from '../../types';
+} from '../../../types';
 import { CommandRunner, defaultCommandRunner } from '../../shared/command-runner';
 
 export interface RsyncBackendOptions {

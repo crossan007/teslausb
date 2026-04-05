@@ -6,7 +6,7 @@ import { configLoader } from '../config';
 import { logger, stateManager } from '../core';
 import { gadgetManager } from '../core/gadget-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
-import { ArchiveBackend, supportsTriggerFileWrites } from '../types';
+import { ArchiveBackend, supportsTriggerFileWrites } from '../../types';
 import { ClipDiscoveryManager } from './clip-discovery-manager';
 import { SnapshotDiscoveryConsumer } from './snapshot-discovery-consumer';
 import { RsyncBackend } from './backends';

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ArchiveBackend, ArchiveTransferExecution, SyncStatus, OperationResult, createCompletedTransferExecution } from '../types';
+import { ArchiveBackend, ArchiveTransferExecution, SyncStatus, OperationResult, createCompletedTransferExecution } from '../../types';
 import { ClipArchiveCoordinator, StateSink } from './clip-archive-coordinator';
 
 class MockBackend implements ArchiveBackend {

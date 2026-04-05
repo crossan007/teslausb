@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PendingClips, Snapshot } from '../types';
+import { PendingClips, Snapshot } from '../../types';
 import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
 import { SnapshotDiscoveryConsumer } from './snapshot-discovery-consumer';
 import { ArchiveEvent } from './events';

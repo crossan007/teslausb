@@ -17,7 +17,7 @@ import {
   PendingClipsSchema,
   TransferSession,
   TransferSessionSchema,
-} from '../types';
+} from '../../types';
 import { ensureDir } from '../shared';
 
 /**

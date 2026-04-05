@@ -5,10 +5,10 @@
 import { concatMap, Observable, Subscription } from 'rxjs';
 import { logger, stateManager } from '../core';
 import { CommandRunner, defaultCommandRunner } from '../shared/command-runner';
-import { DefaultSyncStatus, PendingClips, SyncStatus } from '../types';
+import { DefaultSyncStatus, PendingClips, SyncStatus } from '../../types';
 import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
-import { ArchiveBackend } from '../types/archive';
+import { ArchiveBackend } from '../../types/archive';
 import { ArchiveEventBus, ArchiveEventBusLike } from './events';
 
 /**

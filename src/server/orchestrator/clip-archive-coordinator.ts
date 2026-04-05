@@ -2,7 +2,7 @@
  * Legacy lineage:
  * - run/archiveloop (archive lifecycle loop: verify/reachability/connect/archive/disconnect)
  */
-import { ArchiveBackend, DefaultSyncStatus, OperationResult, SyncStatus, TransferFileProgress, TransferSession } from '../types';
+import { ArchiveBackend, DefaultSyncStatus, OperationResult, SyncStatus, TransferFileProgress, TransferSession } from '../../types';
 import { logger } from '../core/logger';
 import { SnapshotDecision, SnapshotManager } from './snapshot-manager';
 import { FreeSpaceDecision, FreeSpaceManager } from './free-space-manager';

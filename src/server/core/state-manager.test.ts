@@ -3,7 +3,7 @@ import { StateManager } from './state-manager';
 import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { SyncStatus, Snapshot, PendingClips, OperationResult, TransferSession } from '../types';
+import { SyncStatus, Snapshot, PendingClips, OperationResult, TransferSession } from '../../types';
 
 describe('StateManager', () => {
   let stateManager: StateManager;

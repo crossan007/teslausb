@@ -1,6 +1,6 @@
 import { SnapshotView, FileTransferProgress } from './types';
 import { BaseViewService } from './base-view-service';
-import { ArchiveEventBusLike } from '../../orchestrator/events';
+import { ArchiveEventBusLike } from '../orchestrator/events';
 import { Snapshot } from '../../types';
 
 /**

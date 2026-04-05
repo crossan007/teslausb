@@ -1,11 +1,11 @@
 import { Observable, Subject } from 'rxjs';
 import { describe, expect, it } from 'vitest';
-import { PendingClips, Snapshot, SyncStatus } from '../types';
+import { PendingClips, Snapshot, SyncStatus } from '../../types';
 import { CommandResult, CommandRunner } from '../shared/command-runner';
 import { RuntimeLifecycleLoop } from './runtime-lifecycle-loop';
 import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
-import { ArchiveBackend } from '../types/archive';
+import { ArchiveBackend } from '../../types/archive';
 import { ArchiveEvent } from './events';
 
 class FakeCommandRunner implements CommandRunner {

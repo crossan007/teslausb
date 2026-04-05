@@ -9,7 +9,7 @@ import { join } from 'path';
 import { logger, stateManager } from '../core';
 import { pathExists } from '../shared';
 import { CommandRunner, defaultCommandRunner } from '../shared/command-runner';
-import { Snapshot } from '../types';
+import { Snapshot } from '../../types';
 
 export interface SnapshotDecision {
   shouldCreate: boolean;

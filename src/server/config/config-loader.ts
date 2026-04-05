@@ -5,7 +5,7 @@
  */
 import { readFileSync } from 'fs';
 import { logger } from '../core/logger';
-import { ConfigSchema, TeslaUSBConfig } from '../types';
+import { ConfigSchema, TeslaUSBConfig } from '../../types';
 import { loadFromEnvironment } from './load-from-environment';
 import { envKeyToConfigKey } from './env-to-config-key';
 import { parseTypedValue } from './parse-typed-value';

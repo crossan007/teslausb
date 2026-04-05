@@ -1,5 +1,5 @@
 import { SystemStatus } from '../../types';
-import { SystemStatusManager } from '../../core/system-status-manager';
+import { SystemStatusManager } from '../core/system-status-manager';
 import { BaseViewService } from './base-view-service';
 
 /**

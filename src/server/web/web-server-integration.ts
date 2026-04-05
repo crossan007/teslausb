@@ -1,7 +1,7 @@
-import { logger } from '../../core/logger';
-import { ArchiveEventBusLike } from '../../orchestrator/events';
-import { SystemStatusManager } from '../../core/system-status-manager';
-import { SnapshotManager } from '../../orchestrator/snapshot-manager';
+import { logger } from '../core/logger';
+import { ArchiveEventBusLike } from '../orchestrator/events';
+import { SystemStatusManager } from '../core/system-status-manager';
+import { SnapshotManager } from '../orchestrator/snapshot-manager';
 import { TeslaUSBConfig } from '../../types';
 import {
   SystemStatusView,
@@ -9,7 +9,7 @@ import {
   SnapshotListViewService,
 } from '../view-services';
 import { WebServer, WebServerOptions } from './web-server';
-import { ClipDiscoveryResult } from '../../orchestrator/clip-discovery-manager';
+import { ClipDiscoveryResult } from '../orchestrator/clip-discovery-manager';
 
 /**
  * Wires view services to orchestrator event bus and coordinators

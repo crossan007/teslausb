@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { RsyncBackend } from './rsync-backend';
 import { CommandRunner, CommandResult, StreamingCommandHandlers } from '../../shared/command-runner';
-import { TransferSession } from '../../types';
+import { TransferSession } from '../../../types';
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';

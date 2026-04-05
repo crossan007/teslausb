@@ -2,7 +2,7 @@ import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Server as HttpServer } from 'http';
-import { logger } from '../../core/logger';
+import { logger } from '../core/logger';
 import {
   SystemStatusView,
   TransferSessionViewService,

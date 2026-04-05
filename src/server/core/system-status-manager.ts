@@ -4,7 +4,7 @@
  */
 import { readFile } from 'fs/promises';
 import { logger } from './logger';
-import { SystemStatus } from '../types';
+import { SystemStatus } from '../../types';
 import { CommandRunner, defaultCommandRunner } from '../shared/command-runner';
 import { SnapshotManager } from '../orchestrator/snapshot-manager';
 

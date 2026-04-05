@@ -2,7 +2,7 @@
  * Consumes immutable snapshot-ready events and emits one discovery result per snapshot scan root.
  */
 import { Observable, Subject } from 'rxjs';
-import { PendingClips, Snapshot } from '../types';
+import { PendingClips, Snapshot } from '../../types';
 import { logger } from '../core/logger';
 import {
   ClipDiscoveryManager,

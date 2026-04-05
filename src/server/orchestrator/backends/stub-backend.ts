@@ -7,7 +7,7 @@
  *
  * These stubs preserve the script contract surface during Phase 2 dry-run mode.
  */
-import { ArchiveBackend, ArchiveTransferExecution, createCompletedTransferExecution } from '../../types';
+import { ArchiveBackend, ArchiveTransferExecution, createCompletedTransferExecution } from '../../../types';
 
 export class StubArchiveBackend implements ArchiveBackend {
   name: string;
