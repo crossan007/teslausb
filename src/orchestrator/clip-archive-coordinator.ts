@@ -101,7 +101,7 @@ export class ClipArchiveCoordinator {
         subscription.unsubscribe();
       }
     } catch (error) {
-      logger.error({ error }, 'Archive cycle failed');
+      logger.error({ err: error }, 'Archive cycle failed');
       cycleResult = {
         skipped: false,
         archived: 0,

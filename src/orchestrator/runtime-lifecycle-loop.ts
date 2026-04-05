@@ -104,7 +104,7 @@ export class RuntimeLifecycleLoop {
       .pipe(concatMap(async (discoveryResult) => this.handleDiscovery(discoveryResult)))
       .subscribe({
         error: (error) => {
-          this.runtimeLogger.error({ error }, 'Runtime lifecycle stream failed');
+          this.runtimeLogger.error({ err: error }, 'Runtime lifecycle stream failed');
         },
       });
 
@@ -158,7 +158,7 @@ export class RuntimeLifecycleLoop {
         });
         cycleSucceeded = Boolean(cycleResult && !cycleResult.skipped && cycleResult.failed === 0);
       } catch (error) {
-        this.runtimeLogger.error({ error }, 'Archive cycle failed for discovery batch');
+        this.runtimeLogger.error({ err: error }, 'Archive cycle failed for discovery batch');
       }
 
       const archivedNow = await this.discoveryManager.resolveArchivedFromSource(

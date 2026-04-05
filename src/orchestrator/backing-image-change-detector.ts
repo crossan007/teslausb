@@ -71,7 +71,7 @@ export class BackingImageChangeDetector {
         });
       }
     } catch (error) {
-      logger.warn({ error, imagePath: this.imagePath }, 'Backing image change poll failed');
+      logger.warn({ err: error, imagePath: this.imagePath }, 'Backing image change poll failed');
     } finally {
       this.inFlight = false;
       this.scheduleNext();

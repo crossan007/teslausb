@@ -103,7 +103,7 @@ export class ArchiveEventBus implements ArchiveEventBusLike {
       try {
         await consumer(event);
       } catch (error) {
-        logger.warn({ error, eventType: event.type }, 'Archive event consumer failed');
+        logger.warn({ err: error, eventType: event.type }, 'Archive event consumer failed');
       }
     }
   }

@@ -75,7 +75,7 @@ export class StateManager {
       }
       return parsed.data;
     } catch (error) {
-      logger.warn({ error, path }, 'Failed to read sync status JSON');
+      logger.warn({ err: error, path }, 'Failed to read sync status JSON');
       return null;
     }
   }
@@ -126,7 +126,7 @@ export class StateManager {
       }
       return parsed.data;
     } catch (error) {
-      logger.warn({ error, path }, 'Failed to read legacy sync status');
+      logger.warn({ err: error, path }, 'Failed to read legacy sync status');
       return null;
     }
   }
@@ -148,7 +148,7 @@ export class StateManager {
       writeFileSync(jsonPath, JSON.stringify(status, null, 2), 'utf-8');
       logger.debug({ status }, 'Sync status written');
     } catch (error) {
-      logger.error({ error, status }, 'Failed to write sync status');
+      logger.error({ err: error, status }, 'Failed to write sync status');
       throw error;
     }
   }
@@ -234,7 +234,7 @@ export class StateManager {
       writeFileSync(path, JSON.stringify(snapshot, null, 2), 'utf-8');
       logger.debug({ snapshot }, 'Snapshot written');
     } catch (error) {
-      logger.error({ error, snapshot }, 'Failed to write snapshot');
+      logger.error({ err: error, snapshot }, 'Failed to write snapshot');
       throw error;
     }
   }
@@ -310,7 +310,7 @@ export class StateManager {
       writeFileSync(path, JSON.stringify(session, null, 2), 'utf-8');
       logger.debug({ sessionId: session.sessionId, phase: session.phase }, 'Transfer session written');
     } catch (error) {
-      logger.error({ error, sessionId: session.sessionId }, 'Failed to write transfer session');
+      logger.error({ err: error, sessionId: session.sessionId }, 'Failed to write transfer session');
       throw error;
     }
   }
@@ -325,7 +325,7 @@ export class StateManager {
       writeFileSync(auditPath, JSON.stringify(result, null, 2), 'utf-8');
       logger.debug({ operation, success: result.success }, 'Operation result recorded');
     } catch (error) {
-      logger.warn({ error, operation }, 'Failed to record operation result');
+      logger.warn({ err: error, operation }, 'Failed to record operation result');
     }
   }
 

@@ -94,7 +94,7 @@ export class SnapshotEventCoordinator {
         scanRootPath,
       }, 'Snapshot created and mounted from backing image change');
     } catch (error) {
-      logger.warn({ error, imagePath: change.imagePath }, 'Failed to create mounted snapshot from backing image change');
+      logger.warn({ err: error, imagePath: change.imagePath }, 'Failed to create mounted snapshot from backing image change');
     } finally {
       this.inFlight = false;
       if (this.pendingChange) {

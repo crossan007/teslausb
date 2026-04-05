@@ -37,7 +37,7 @@ export class ConfigLoader {
 			logger.info({ config: this.sanitizeLogging(this.config) }, 'Configuration loaded');
 			return this.config;
 		} catch (error) {
-			logger.error({ error, merged }, 'Configuration validation failed');
+			logger.error({ err: error, merged }, 'Configuration validation failed');
 			throw new Error(`Invalid configuration: ${error}`);
 		}
 	}

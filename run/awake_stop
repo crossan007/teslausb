@@ -1,5 +1,10 @@
 #!/bin/bash -eu
 
+# Provide a log() shim when this script is invoked outside of archiveloop context.
+if ! declare -F log > /dev/null 2>&1; then
+  function log { echo "$*"; }
+fi
+
 if [[ ( -z "${TESLAFI_API_TOKEN:+x}" ) && ( -z "${TESSIE_API_TOKEN:+x}" ) && ( -z "${TESLA_BLE_VIN:+x}" ) && ( -z "${KEEP_AWAKE_WEBHOOK_URL:+x}" ) ]]
 then
   exit

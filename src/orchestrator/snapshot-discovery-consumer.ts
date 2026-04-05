@@ -97,7 +97,7 @@ export class SnapshotDiscoveryConsumer {
         this.lastEmittedFingerprint = '';
       }
     } catch (error) {
-      logger.warn({ error, rootPath }, 'Snapshot discovery failed');
+      logger.warn({ err: error, rootPath }, 'Snapshot discovery failed');
     }
   }
 
