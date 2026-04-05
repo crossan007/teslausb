@@ -27,7 +27,7 @@ function makePending(filePaths: string[]): PendingClips {
 
 function makeResult(filePaths: string[]): ClipDiscoveryResult {
   return {
-    rootPath: '/tmp/snapshots/snap-000001',
+    rootPath: '/backingfiles/snapshots/snap-000001/mnt',
     filePaths,
     pendingClips: makePending(filePaths),
     candidatesDiscovered: filePaths.length,

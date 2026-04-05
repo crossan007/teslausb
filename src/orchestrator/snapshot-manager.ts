@@ -37,7 +37,6 @@ export interface SnapshotManagerOptions {
 
 const DEFAULT_CAM_DISK_PATH = '/backingfiles/cam_disk.bin';
 const DEFAULT_SNAPSHOT_ROOT = '/backingfiles/snapshots';
-const DEFAULT_SNAPSHOT_MOUNT_ROOT = '/tmp/snapshots';
 const DEFAULT_MUTABLE_TESLACAM_PATH = '/mutable/TeslaCam';
 
 export class SnapshotManager {
@@ -58,7 +57,7 @@ export class SnapshotManager {
   ) {
     this.camDiskPath = options.camDiskPath ?? DEFAULT_CAM_DISK_PATH;
     this.snapshotRootPath = options.snapshotRootPath ?? DEFAULT_SNAPSHOT_ROOT;
-    this.snapshotMountRootPath = options.snapshotMountRootPath ?? DEFAULT_SNAPSHOT_MOUNT_ROOT;
+    this.snapshotMountRootPath = options.snapshotMountRootPath ?? this.snapshotRootPath;
     this.mutableTeslaCamPath = options.mutableTeslaCamPath ?? DEFAULT_MUTABLE_TESLACAM_PATH;
     this.nowEpochProvider = options.nowEpochProvider ?? (() => Math.floor(Date.now() / 1000));
     this.snapshotCopier = options.snapshotCopier ?? ((sourcePath, destinationPath) => this.copySnapshotReflink(sourcePath, destinationPath));
@@ -82,7 +81,6 @@ export class SnapshotManager {
 
   async createSnapshot(): Promise<Snapshot> {
     await mkdir(this.snapshotRootPath, { recursive: true });
-    await mkdir(this.snapshotMountRootPath, { recursive: true });
 
     const snapshotIds = await this.listSnapshotIds();
     const highestExisting = snapshotIds.length === 0
@@ -106,8 +104,8 @@ export class SnapshotManager {
     const snapshotId = typeof snapshotOrId === 'string' ? snapshotOrId : snapshotOrId.id;
     const snapshot = await this.buildSnapshotMetadata(snapshotId, false);
 
-    await mkdir(snapshot.mountPath ?? join(this.snapshotMountRootPath, snapshotId), { recursive: true });
-    await this.mountSnapshotAction(snapshot.filePath, snapshot.mountPath ?? join(this.snapshotMountRootPath, snapshotId));
+    await mkdir(snapshot.mountPath, { recursive: true });
+    await this.mountSnapshotAction(snapshot.filePath, snapshot.mountPath);
 
     const mounted = {
       ...snapshot,
@@ -124,7 +122,7 @@ export class SnapshotManager {
   }
 
   async releaseSnapshot(snapshotId: string): Promise<void> {
-    const mountPath = join(this.snapshotMountRootPath, snapshotId);
+    const mountPath = this.buildMountPath(snapshotId);
     await this.unmountSnapshotAction(mountPath).catch(() => undefined);
     await rm(mountPath, { recursive: true, force: true }).catch(() => undefined);
     await rm(join(this.snapshotRootPath, snapshotId), { recursive: true, force: true });
@@ -154,10 +152,14 @@ export class SnapshotManager {
       createdAt: this.nowEpochProvider(),
       filePath,
       tocPath: `${filePath}.toc`,
-      mountPath: join(this.snapshotMountRootPath, snapshotId),
+      mountPath: this.buildMountPath(snapshotId),
       size: fileStats.size,
       isLinked,
     };
+  }
+
+  private buildMountPath(snapshotId: string): string {
+    return join(this.snapshotMountRootPath, snapshotId, 'mnt');
   }
 
   private async copySnapshotReflink(sourcePath: string, destinationPath: string): Promise<void> {

@@ -166,7 +166,7 @@ describe('RuntimeLifecycleLoop', () => {
 
     loop.start();
     discoveryLoop.subject.next({
-      rootPath: '/tmp/snapshots/snap-000001',
+      rootPath: '/backingfiles/snapshots/snap-000001/mnt',
       filePaths: ['TeslaCam/SavedClips/evt1/file.mp4'],
       pendingClips: pending(),
       candidatesDiscovered: 1,
@@ -221,7 +221,7 @@ describe('RuntimeLifecycleLoop', () => {
 
     loop.start();
     discoveryLoop.subject.next({
-      rootPath: '/tmp/snapshots/snap-000001',
+      rootPath: '/backingfiles/snapshots/snap-000001/mnt',
       filePaths: ['TeslaCam/SavedClips/evt1/file.mp4'],
       pendingClips: pending(),
       candidatesDiscovered: 1,

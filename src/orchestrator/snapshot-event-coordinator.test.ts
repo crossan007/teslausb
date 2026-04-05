@@ -18,7 +18,7 @@ describe('SnapshotEventCoordinator', () => {
         createdAt: 123,
         filePath: '/backingfiles/snapshots/snap-000001/snap.bin',
         tocPath: '/backingfiles/snapshots/snap-000001/snap.bin.toc',
-        mountPath: '/tmp/snapshots/snap-000001',
+        mountPath: '/backingfiles/snapshots/snap-000001/mnt',
         size: 100,
         isLinked: true,
       })),

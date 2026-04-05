@@ -116,6 +116,7 @@ describe('StateManager', () => {
         createdAt: Date.now(),
         filePath: '/backingfiles/snapshots/snap-000001/snap.bin',
         tocPath: '/backingfiles/snapshots/snap-000001/snap.bin.toc',
+        mountPath: '/backingfiles/snapshots/snap-000001/mnt',
         size: 2048,
         isLinked: true,
       };
