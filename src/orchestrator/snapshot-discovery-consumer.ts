@@ -2,7 +2,7 @@
  * Consumes immutable snapshot-ready events and emits one discovery result per snapshot scan root.
  */
 import { Observable, Subject } from 'rxjs';
-import { PendingClips } from '../types';
+import { PendingClips, Snapshot } from '../types';
 import { logger } from '../core/logger';
 import {
   ClipDiscoveryManager,
@@ -17,9 +17,14 @@ export interface SnapshotDiscoveryConsumerOptions extends Omit<ClipDiscoveryOpti
   eventBus: ArchiveEventBusLike;
 }
 
+interface SnapshotScanWorkItem {
+  rootPath: string;
+  snapshot: Snapshot;
+}
+
 export class SnapshotDiscoveryConsumer {
   private readonly eventsSubject = new Subject<ClipDiscoveryResult>();
-  private readonly pendingScanRoots: string[] = [];
+  private readonly pendingScanRoots: SnapshotScanWorkItem[] = [];
   private running = false;
   private processing = false;
   private lastEmittedFingerprint = '';
@@ -42,7 +47,10 @@ export class SnapshotDiscoveryConsumer {
         return;
       }
       logger.debug({ scanRootPath: event.scanRootPath }, 'snapshot-ready received by discovery consumer');
-      await this.consume(event.scanRootPath);
+      await this.consume({
+        rootPath: event.scanRootPath,
+        snapshot: event.snapshot,
+      });
     });
     logger.debug('SnapshotDiscoveryConsumer started');
   }
@@ -55,12 +63,12 @@ export class SnapshotDiscoveryConsumer {
     this.eventsSubject.complete();
   }
 
-  async consume(rootPath: string): Promise<void> {
-    if (!rootPath) {
+  async consume(item: SnapshotScanWorkItem): Promise<void> {
+    if (!item.rootPath) {
       return;
     }
 
-    this.pendingScanRoots.push(rootPath);
+    this.pendingScanRoots.push(item);
     if (this.processing) {
       return;
     }
@@ -68,24 +76,30 @@ export class SnapshotDiscoveryConsumer {
     this.processing = true;
     try {
       while (this.running && this.pendingScanRoots.length > 0) {
-        const nextRoot = this.pendingScanRoots.shift();
-        if (!nextRoot) {
+        const nextItem = this.pendingScanRoots.shift();
+        if (!nextItem) {
           continue;
         }
-        await this.processRoot(nextRoot);
+        await this.processRoot(nextItem);
       }
     } finally {
       this.processing = false;
     }
   }
 
-  private async processRoot(rootPath: string): Promise<void> {
+  private async processRoot(item: SnapshotScanWorkItem): Promise<void> {
+    const rootPath = item.rootPath;
     logger.info({ rootPath }, 'Discovery scan starting for snapshot root');
     try {
-      const result = await this.discoveryManager.discoverPending({
+      const discoveryResult = await this.discoveryManager.discoverPending({
         ...this.buildDiscoveryOptions(rootPath),
         rootPath,
       });
+      const result: ClipDiscoveryResult = {
+        ...discoveryResult,
+        snapshot: item.snapshot,
+      };
+
       this.options.persistPendingClips?.(result.pendingClips);
       logger.info(
         {

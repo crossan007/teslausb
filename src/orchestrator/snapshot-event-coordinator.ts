@@ -61,9 +61,7 @@ export class SnapshotEventCoordinator {
       await this.eventBus.publish({
         type: 'snapshot-ready',
         occurredAtMs: this.nowMsProvider(),
-        snapshotId: mounted.id,
-        snapshotFilePath: mounted.filePath,
-        snapshotMountPath: mounted.mountPath,
+        snapshot: mounted,
         scanRootPath,
       });
       logger.info({

@@ -41,7 +41,10 @@ export const SnapshotSchema = z.object({
   isLinked: z.boolean().default(false), // if mnt symlink exists
 });
 
-export type Snapshot = z.infer<typeof SnapshotSchema>;
+export type Snapshot = z.infer<typeof SnapshotSchema> & {
+  /** Optional runtime callback for releasing the snapshot resources. */
+  release?: () => Promise<void>;
+};
 
 /**
  * Represents a batch of camera clips pending archival

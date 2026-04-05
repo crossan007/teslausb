@@ -189,6 +189,24 @@ export class RuntimeLifecycleLoop {
         succeeded: cycleSucceeded,
         triggerFilePaths: cycleSucceeded ? (this.options.finishTriggerFilePaths ?? []) : [],
       });
+      await this.cleanupProcessedSnapshot(discoveryResult);
+    }
+  }
+
+  /**
+   * Releases snapshot artifacts after the associated discovery batch has been processed.
+   */
+  private async cleanupProcessedSnapshot(discoveryResult: ClipDiscoveryResult): Promise<void> {
+    const snapshot = discoveryResult.snapshot;
+    if (!snapshot?.release) {
+      return;
+    }
+
+    try {
+      await snapshot.release();
+      this.runtimeLogger.info({ snapshotId: snapshot.id, rootPath: discoveryResult.rootPath }, 'Released processed snapshot');
+    } catch (error) {
+      this.runtimeLogger.warn({ err: error, snapshotId: snapshot.id, rootPath: discoveryResult.rootPath }, 'Failed to release processed snapshot');
     }
   }
 

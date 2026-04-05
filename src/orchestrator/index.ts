@@ -80,6 +80,7 @@ async function main(): Promise<void> {
     logger.debug({ event }, 'Event received by main event bus');
   });
   const snapshotManager = new SnapshotManager();
+  await snapshotManager.cleanupStaleSnapshots();
   const snapshotEventCoordinator = new SnapshotEventCoordinator({
     eventBus,
     snapshotManager

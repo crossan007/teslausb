@@ -1,5 +1,6 @@
 import { Observable, Subject } from 'rxjs';
 import { logger } from '../../core/logger';
+import { Snapshot } from '../../types';
 
 /**
  * Supported orchestrator event names.
@@ -43,12 +44,8 @@ export interface BackingImageChangedEvent extends EventBase {
 
 export interface SnapshotReadyEvent extends EventBase {
   type: 'snapshot-ready';
-  /** Snapshot id, e.g. snap-000001. */
-  snapshotId: string;
-  /** Snapshot image file path. */
-  snapshotFilePath: string;
-  /** Mounted snapshot root path. */
-  snapshotMountPath: string;
+  /** Snapshot metadata object for this discovery pass. */
+  snapshot: Snapshot;
   /** Path inside the mounted snapshot that discovery should scan. */
   scanRootPath: string;
 }

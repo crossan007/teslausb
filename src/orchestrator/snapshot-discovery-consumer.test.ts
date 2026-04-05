@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PendingClips } from '../types';
+import { PendingClips, Snapshot } from '../types';
 import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
 import { SnapshotDiscoveryConsumer } from './snapshot-discovery-consumer';
 import { ArchiveEvent } from './events';
@@ -58,12 +58,20 @@ const ROOT_A = '/backingfiles/snapshots/snap-000001/mnt/TeslaCam';
 const ROOT_B = '/backingfiles/snapshots/snap-000002/mnt/TeslaCam';
 
 async function snapshotReady(bus: FakeEventBus, scanRootPath: string): Promise<void> {
+  const snapshot: Snapshot = {
+    id: 'snap-000001',
+    createdAt: Math.floor(Date.now() / 1000),
+    filePath: '/backingfiles/snapshots/snap-000001/snap.bin',
+    tocPath: '/backingfiles/snapshots/snap-000001/snap.bin.toc',
+    mountPath: '/backingfiles/snapshots/snap-000001/mnt',
+    size: 100,
+    isLinked: true,
+  };
+
   await bus.publish({
     type: 'snapshot-ready',
     occurredAtMs: Date.now(),
-    snapshotId: 'snap-000001',
-    snapshotFilePath: '/backingfiles/snapshots/snap-000001/snap.bin',
-    snapshotMountPath: '/backingfiles/snapshots/snap-000001/mnt',
+    snapshot,
     scanRootPath,
   });
 }

@@ -1,6 +1,6 @@
 import { Observable, Subject } from 'rxjs';
 import { describe, expect, it } from 'vitest';
-import { PendingClips, SyncStatus } from '../types';
+import { PendingClips, Snapshot, SyncStatus } from '../types';
 import { CommandResult, CommandRunner } from '../shared/command-runner';
 import { RuntimeLifecycleLoop } from './runtime-lifecycle-loop';
 import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
@@ -120,6 +120,19 @@ function pending(totalFiles = 1): PendingClips {
   };
 }
 
+function snapshotWithRelease(snapshotId: string, release: () => Promise<void>): Snapshot {
+  return {
+    id: snapshotId,
+    createdAt: 0,
+    filePath: `/backingfiles/snapshots/${snapshotId}/snap.bin`,
+    tocPath: `/backingfiles/snapshots/${snapshotId}/snap.bin.toc`,
+    mountPath: `/backingfiles/snapshots/${snapshotId}/mnt`,
+    size: 0,
+    isLinked: true,
+    release,
+  };
+}
+
 describe('RuntimeLifecycleLoop', () => {
   it('waits for reachability and processes archive batch with lifecycle hooks', async () => {
     const discoveryLoop = new FakeDiscoveryLoop();
@@ -130,6 +143,7 @@ describe('RuntimeLifecycleLoop', () => {
 
     const syncStatusWrites: SyncStatus[] = [];
     const triggerEvents: ArchiveEvent[] = [];
+    const releasedSnapshots: string[] = [];
 
     const loop = new RuntimeLifecycleLoop(
       discoveryLoop,
@@ -170,12 +184,16 @@ describe('RuntimeLifecycleLoop', () => {
       candidatesDiscovered: 1,
       candidatesFiltered: 0,
       previouslyArchivedRetained: 0,
+      snapshot: snapshotWithRelease('snap-000001', async () => {
+        releasedSnapshots.push('snap-000001');
+      }),
     });
 
     await waitForCondition(() => orchestrator.calls === 1, 1000);
 
     expect(orchestrator.calls).toBe(1);
     expect(manager.marked).toEqual(['SavedClips/evt1/file.mp4']);
+    expect(releasedSnapshots).toEqual(['snap-000001']);
     expect(triggerEvents.map((event) => event.type)).toEqual(['archive-start', 'archive-finish']);
     expect(syncStatusWrites.length).toBeGreaterThan(0);
 

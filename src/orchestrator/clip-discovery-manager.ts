@@ -6,7 +6,7 @@
 import { Dirent } from 'fs';
 import { mkdir, opendir, readFile, stat, lstat, writeFile } from 'fs/promises';
 import { dirname, posix as posixPath } from 'path';
-import { PendingClips } from '../types';
+import { PendingClips, Snapshot } from '../types';
 
 const DEFAULT_MIN_CLIP_SIZE_BYTES = 100_000;
 const DEFAULT_STAT_CONCURRENCY = 32;
@@ -31,6 +31,7 @@ export interface ClipDiscoveryResult {
   candidatesDiscovered: number;
   candidatesFiltered: number;
   previouslyArchivedRetained: number;
+  snapshot?: Snapshot;
 }
 
 interface ClipCategoryConfig {

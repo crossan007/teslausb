@@ -149,6 +149,23 @@ export class SnapshotManager {
     logger.info({ snapshotId }, 'Snapshot released');
   }
 
+  async cleanupStaleSnapshots(): Promise<void> {
+    const snapshotIds = await this.listSnapshotIds();
+    if (snapshotIds.length === 0) {
+      return;
+    }
+
+    logger.info({ count: snapshotIds.length }, 'Cleaning stale snapshots from previous runs');
+
+    for (const snapshotId of snapshotIds) {
+      try {
+        await this.releaseSnapshot(snapshotId);
+      } catch (error) {
+        logger.warn({ err: error, snapshotId }, 'Failed to release stale snapshot during startup cleanup');
+      }
+    }
+  }
+
   async listSnapshotIds(): Promise<string[]> {
     let entries;
     try {
@@ -174,6 +191,7 @@ export class SnapshotManager {
       mountPath: this.buildMountPath(snapshotId),
       size: fileStats.size,
       isLinked,
+      release: async () => this.releaseSnapshot(snapshotId),
     };
   }
 
