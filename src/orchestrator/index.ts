@@ -76,6 +76,9 @@ async function main(): Promise<void> {
     ? buildStartTriggerFilePaths(finishTriggerFilePaths)
     : [];
   const eventBus = new ArchiveEventBus();
+  eventBus.subscribe(async (event) => {
+    logger.debug({ event }, 'Event received by main event bus');
+  });
   const snapshotManager = new SnapshotManager();
   const snapshotEventCoordinator = new SnapshotEventCoordinator({
     eventBus,
