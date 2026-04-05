@@ -1,5 +1,7 @@
 # Introduction
 
+> **Current TypeScript runtime status:** this is the actively supported archive backend path (`ARCHIVE_SYSTEM=rsync`).
+
 This guide will show you how to use [rsync](https://rsync.samba.org/) to archive your saved TeslaCam footage on a remote storage server.
 
 Since sftp/rsync accesses a computer through SSH the only requirement for hosting an SFTP/rsync server is to have a box running SSH. For example, you could use another Raspberry Pi connected to your local network with a USB storage drive plugged in. The official Raspberry Pi site has a good example on [how to mount an external drive](https://www.raspberrypi.org/documentation/configuration/external-storage.md).

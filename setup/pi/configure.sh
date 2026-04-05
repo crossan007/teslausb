@@ -775,13 +775,19 @@ function install_push_message_scripts() {
 
 function install_node_runtime() {
   local nvm_dir=/opt/nvm
+  local node_bin_dir=/usr/local/bin
   local nvm_install_script=/tmp/install-nvm.sh
   local node_version_candidates=(20 18 16)
 
   log_progress "Installing nvm-managed node runtime"
   apt-get -y install ca-certificates curl
 
+  # Migration cleanup: remove prior node runtime/app artifacts before reinstall.
+  rm -rf /opt/nvm /root/teslausb-node
+  rm -f /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx
+
   mkdir -p "$nvm_dir"
+  mkdir -p "$node_bin_dir"
 
   if [ ! -s "$nvm_dir/nvm.sh" ]
   then
@@ -829,12 +835,12 @@ function install_node_runtime() {
   npm_path="$(dirname "$node_path")/npm"
   npx_path="$(dirname "$node_path")/npx"
 
-  ln -sf "$node_path" /usr/local/bin/node
-  ln -sf "$npm_path" /usr/local/bin/npm
-  ln -sf "$npx_path" /usr/local/bin/npx
+  ln -sf "$node_path" "$node_bin_dir/node"
+  ln -sf "$npm_path" "$node_bin_dir/npm"
+  ln -sf "$npx_path" "$node_bin_dir/npx"
 
-  log_progress "Installed node runtime: $(/usr/local/bin/node --version)"
-  log_progress "Installed npm runtime: $(/usr/local/bin/npm --version)"
+  log_progress "Installed node runtime: $($node_bin_dir/node --version)"
+  log_progress "Installed npm runtime: $($node_bin_dir/npm --version)"
 }
 
 function ensure_node_backend_supported_archive() {

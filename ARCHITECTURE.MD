@@ -10,7 +10,7 @@ This guide is for contributors who want to quickly answer:
 
 ## 1) Mental model (in one minute)
 
-TeslaUSB is a **script-driven embedded system** that turns a Raspberry Pi/SBC into a USB drive for Tesla, while also:
+TeslaUSB is an embedded system that turns a Raspberry Pi/SBC into a USB drive for Tesla, while also:
 
 - continuously snapshotting and cleaning the camera filesystem,
 - archiving clips when home network storage is reachable,
@@ -19,8 +19,8 @@ TeslaUSB is a **script-driven embedded system** that turns a Raspberry Pi/SBC in
 The architecture has 4 layers:
 
 1. **Provisioning layer** (`setup/pi/*`): validates config, installs scripts, configures OS services.
-2. **Runtime orchestrator** (`run/archiveloop`): the long-running control loop.
-3. **Pluggable archive backends** (`run/*_archive/*`): rsync, rclone, cifs, nfs, none.
+2. **Runtime orchestrator** (`src/orchestrator/*` via `teslausb-node.service`): the long-running TypeScript control loop.
+3. **Archive backend layer** (`src/orchestrator/backends/rsync-backend.ts`): current runtime support is `ARCHIVE_SYSTEM=rsync`.
 4. **Web and mount layer** (`teslausb-www/*`, `run/auto.*`, snapshot scripts): browsing/download UX and autofs mounts.
 
 ---
@@ -33,11 +33,31 @@ The architecture has 4 layers:
 - Reads user config via: `setup/pi/envsetup.sh` (`/root/teslausb_setup_variables.conf`)
 - Runs configuration pipeline in: `setup/pi/configure.sh`
 - Picks archive module with `get_archive_module()` and installs module scripts to `/root/bin`
-- Writes and enables systemd unit `teslausb.service` that runs `/root/bin/archiveloop`
+- Writes and enables systemd unit `teslausb-node.service` that runs the TypeScript orchestrator runtime
+
+#### Upgrade prerequisite on legacy 2G root layouts
+
+For older installs where `/` is 2G and nearly full, `setup-teslausb upgrade` can fail while installing Node runtime and dependencies.
+
+Required migration policy:
+
+1. Keep root partition large enough for Node runtime and app payload.
+2. If root is too full to complete upgrade, either:
+  - clean obsolete runtime artifacts from `/` before rerunning upgrade, or
+  - perform a destructive repartition to increase root (delete/recreate `/backingfiles` and `/mutable`).
+3. Treat this as an upgrade precheck for v2 runtime roll-forward.
+
+Operator helper command:
+
+- `setup-teslausb expand_root <new_root_size>` automates destructive root expansion for legacy cramped layouts.
+- This command deletes `/backingfiles` and `/mutable` partitions and therefore deletes recordings/snapshots/state.
+- The command now recreates temporary fallback `/mutable` and `/backingfiles` directories on root so the device can reboot and complete `setup-teslausb upgrade`.
+- After running it, reboot and run `setup-teslausb upgrade` to recreate partitions and continue rollout.
 
 ### Runtime lifecycle (service)
 
-- Service entrypoint: `run/archiveloop`
+- Service unit: `teslausb-node.service`
+- Service entrypoint: `src/orchestrator/index.ts` (Node runtime)
 - Boot sequence (simplified):
   1. load env (`/root/bin/envsetup.sh`)
   2. start helpers (temperature monitor, snapshot loop, free-space manager, wifi checker, log rotator)
@@ -70,7 +90,9 @@ The architecture has 4 layers:
 
 ## Runtime scripts (`run/`) highlights
 
-- `archiveloop`: **core orchestrator**
+These are primarily legacy shell helpers that are still used where not yet migrated to TypeScript.
+
+- `archiveloop`: **legacy core orchestrator** (replaced by `src/orchestrator/*` in current TS runtime path)
 - `make_snapshot.sh` / `release_snapshot.sh`: snapshot creation & retention mechanics
 - `manage_free_space.sh`: camera disk space pressure handling
 - `enable_gadget.sh` / `disable_gadget.sh`: USB gadget attach/detach
@@ -80,7 +102,9 @@ The architecture has 4 layers:
 
 ## Archive backend modules
 
-Each backend directory (`run/rsync_archive`, `run/cifs_archive`, `run/nfs_archive`, `run/rclone_archive`, `run/none_archive`) provides a contract consumed by `archiveloop`:
+Current TS runtime support is `rsync` only. The additional backend directories below remain legacy implementation paths.
+
+Each backend directory (`run/rsync_archive`, `run/cifs_archive`, `run/nfs_archive`, `run/rclone_archive`, `run/none_archive`) provides a legacy contract consumed by `archiveloop`:
 
 - `verify-and-configure-archive.sh`
 - `archive-is-reachable.sh`
@@ -97,20 +121,20 @@ Each backend directory (`run/rsync_archive`, `run/cifs_archive`, `run/nfs_archiv
 
 Start here:
 
-- `run/archiveloop` (file list generation, short-file filtering, retry/connect loop)
-- `run/<backend>_archive/archive-clips.sh` (backend transfer command details)
+- `src/orchestrator/runtime-lifecycle-loop.ts` (file list generation, retry/connect loop)
+- `src/orchestrator/backends/rsync-backend.ts` (current backend transfer implementation)
 
 Good to also inspect:
 
-- `run/<backend>_archive/connect-archive.sh`
-- `run/<backend>_archive/archive-is-reachable.sh`
+- `src/orchestrator/backends/command-runner.ts`
+- `src/orchestrator/backends/index.ts`
 
 ### “I want to add or modify an archive backend”
 
 Start here:
 
-- create/modify `run/<new>_archive/*` with the contract above
-- update backend selection in `setup/pi/configure.sh` (`get_archive_module`, config validation)
+- add/modify a TypeScript backend in `src/orchestrator/backends/`
+- wire backend selection in `src/orchestrator/index.ts` and keep setup validation in `setup/pi/configure.sh`
 
 Then verify install path:
 
@@ -123,7 +147,7 @@ Start here:
 - `run/make_snapshot.sh`
 - `run/release_snapshot.sh`
 - `run/manage_free_space.sh`
-- snapshot cadence and trigger points in `run/archiveloop`
+- snapshot cadence and trigger points in `src/orchestrator/runtime-lifecycle-loop.ts`
 
 ### “I want to change web UI or diagnostics pages”
 
@@ -158,7 +182,7 @@ Start here:
 
 - `run/enable_gadget.sh`
 - `run/disable_gadget.sh`
-- attachment timing in `run/archiveloop`
+- attachment timing in `src/orchestrator/runtime-lifecycle-loop.ts`
 - relevant boot module behavior in `setup/pi/setup-teslausb`
 
 ---
@@ -168,12 +192,12 @@ Start here:
 - Backing image files live under `/backingfiles/*.bin` (cam/music/etc).
 - Active mutable runtime state/logs primarily under `/mutable` and `/tmp`.
 - Snapshots are stored in `/backingfiles/snapshots/snap-*` with autofs mount views under `/tmp/snapshots/...`.
-- Camera clip visibility for archive/web is mostly symlink-driven and overlay-assisted in `archiveloop`.
+- Camera clip visibility for archive/web is mostly symlink-driven and overlay-assisted in the orchestrator flow (`src/orchestrator/*`, legacy: `run/archiveloop`).
 
 When editing mount/snapshot code, assume concurrency with:
 
 - autofs,
-- long-running `archiveloop`,
+- long-running orchestrator service,
 - potential abrupt power loss from vehicle USB behavior.
 
 ---
@@ -186,7 +210,7 @@ Patterns used heavily across scripts:
 - aggressive retries around mount/network actions
 - filesystem repair (`fsck`) before exposing drives
 - defensive unmount/lazy unmount fallbacks
-- service-level restart (`Restart=always`) for `teslausb.service`
+- service-level restart (`Restart=always`) for `teslausb-node.service`
 
 If introducing new runtime scripts, follow those same patterns first before adding complexity.
 
@@ -198,7 +222,7 @@ If introducing new runtime scripts, follow those same patterns first before addi
 2. Validate shell syntax/style with `check.sh` (ShellCheck wrapper).
 3. Keep changes backend-local when possible (`run/<backend>_archive/*`).
 4. If setup behavior changes, test both fresh setup and upgrade path (`setup-teslausb upgrade/install`).
-5. For runtime changes, check logs in `/mutable/archiveloop.log` and service status for `teslausb.service`.
+5. For runtime changes, check journald for `teslausb-node.service` and runtime status artifacts under `/mutable`.
 
 ### TypeScript coding standards
 
@@ -224,7 +248,7 @@ When changing runtime behavior, preserve upgrade compatibility by default:
 
 ## 8) Quick “owner map” (fast lookup)
 
-- **Main runtime brain:** `run/archiveloop`
+- **Main runtime brain:** `src/orchestrator/index.ts`
 - **Installer/upgrade entrypoint:** `setup/pi/setup-teslausb`
 - **Config defaults + variable migration:** `setup/pi/envsetup.sh`
 - **Runtime + systemd wiring:** `setup/pi/configure.sh`
@@ -233,7 +257,7 @@ When changing runtime behavior, preserve upgrade compatibility by default:
 - **Snapshot logic:** `run/make_snapshot.sh`
 - **Notification fan-out:** `run/send-push-message`
 
-If you are unsure where to start, begin at `run/archiveloop` and trace outward to whichever helper it calls for your feature area.
+If you are unsure where to start, begin at `src/orchestrator/index.ts` and trace outward to whichever helper it calls for your feature area.
 
 ---
 
@@ -302,7 +326,7 @@ The official upgrade process handles all state transitions safely:
 
 **What this does:**
 - Downloads your branch tarball from GitHub.
-- Stops the running `teslausb.service` and related helpers.
+- Stops the running `teslausb-node.service` and related helpers.
 - Validates configuration.
 - Installs/updates all scripts and system configuration.
 - Re-enables and restarts services.
@@ -321,7 +345,7 @@ Because the upgrade path properly handles:
 **Check service health:**
 
 ```bash
-systemctl status teslausb --no-pager
+systemctl status teslausb-node --no-pager
 # should show: Active (running)
 
 # view recent log output
@@ -374,8 +398,8 @@ export BRANCH=main-dev
 /root/bin/setup-teslausb upgrade
 
 # verify service restarted:
-systemctl status teslausb
-tail -n 20 /mutable/archiveloop.log
+systemctl status teslausb-node
+journalctl -u teslausb-node -n 20 --no-pager
 ```
 
 ### Testing checklist
@@ -798,8 +822,8 @@ export BRANCH=v2.0-ts
 /root/bin/setup-teslausb upgrade
 
 # Systemd unit runs compiled Node.js app
-systemctl status teslausb
-journalctl -u teslausb -f
+systemctl status teslausb-node
+journalctl -u teslausb-node -f
 ```
 
 The setup script downloads pre-built bundle (or builds on-device if needed).

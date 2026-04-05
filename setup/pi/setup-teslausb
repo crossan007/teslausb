@@ -117,6 +117,12 @@ fi
 # shellcheck disable=SC1090
 source "$THISDIR/envsetup.sh"
 
+# Configure SSH access as early as possible so key-based root login is available
+# even if later setup stages fail (e.g. due to low disk space).
+copy_script setup/pi/configure-ssh.sh /tmp
+/tmp/configure-ssh.sh
+setup_progress "Early SSH configuration applied"
+
 function dehumanize () {
   echo $(($(echo "$1" | sed 's/GB/G/;s/MB/M/;s/KB/K/;s/G/*1024M/;s/M/*1024K/;s/K/*1024/')))
 }
@@ -513,6 +519,223 @@ function get_usb_state {
     *)
       echo "unknown":
   esac
+}
+
+function partition_number_from_device {
+  local dev="$1"
+  local number
+  number=$(echo "$dev" | sed -E 's@^/dev/[a-zA-Z0-9]+p?([0-9]+)$@\1@')
+  if [ -z "$number" ] || [ "$number" = "$dev" ]
+  then
+    echo ""
+    return
+  fi
+  echo "$number"
+}
+
+function delete_partition_if_present {
+  local part_num="$1"
+  if [ -z "$part_num" ]
+  then
+    return
+  fi
+
+  if [ -b "${BOOT_DEVICE_PARTITION_PREFIX}${part_num}" ]
+  then
+    setup_progress "Deleting partition ${BOOT_DEVICE_PARTITION_PREFIX}${part_num}"
+    parted "$BOOT_DISK" --script rm "$part_num"
+  fi
+}
+
+function backup_mutable_link_target_if_present {
+  local link_path="$1"
+  local destination="$2"
+  if [ -L "$link_path" ]
+  then
+    local resolved
+    resolved=$(readlink -f "$link_path")
+    if echo "$resolved" | grep -q '^/mutable/' && [ -e "$resolved" ]
+    then
+      mkdir -p "$(dirname "$destination")"
+      cp -a "$resolved" "$destination"
+    fi
+  fi
+}
+
+function cmd_expand_root {
+  local requested_size_human="${1:-}"
+  local expand_root_backup_dir=/root/expand-root-backup
+  if [ -z "$requested_size_human" ]
+  then
+    echo "Usage: $0 expand_root <new_root_size>"
+    echo "Example: $0 expand_root 4G"
+    echo "WARNING: this is destructive and deletes /backingfiles and /mutable partitions"
+    exit 1
+  fi
+
+  local requested_size_sectors
+  requested_size_sectors=$(($(dehumanize "$requested_size_human") / 512))
+  if [ "$requested_size_sectors" -le 0 ]
+  then
+    echo "STOP: invalid size '$requested_size_human'"
+    exit 1
+  fi
+
+  local current_root_size_sectors
+  current_root_size_sectors=$(partx --show -g -o SECTORS "$ROOT_PARTITION_DEVICE")
+  if [ "$requested_size_sectors" -le "$current_root_size_sectors" ]
+  then
+    echo "STOP: requested root size must be larger than current size"
+    echo "current root sectors: $current_root_size_sectors"
+    exit 1
+  fi
+
+  local backing_dev=""
+  local mutable_dev=""
+  if blkid -L backingfiles > /dev/null 2>&1
+  then
+    backing_dev=$(readlink -f "$(blkid -L backingfiles)")
+  fi
+  if blkid -L mutable > /dev/null 2>&1
+  then
+    mutable_dev=$(readlink -f "$(blkid -L mutable)")
+  fi
+
+  local backing_num=""
+  local mutable_num=""
+  backing_num=$(partition_number_from_device "$backing_dev")
+  mutable_num=$(partition_number_from_device "$mutable_dev")
+
+  if [ -z "$backing_num" ] || [ -z "$mutable_num" ]
+  then
+    echo "STOP: could not identify both backingfiles and mutable partitions by label."
+    echo "Refusing destructive resize to avoid corrupting an unexpected layout."
+    exit 1
+  fi
+
+  if [ "$backing_num" -le "$ROOT_PART_NUM" ] || [ "$mutable_num" -le "$ROOT_PART_NUM" ]
+  then
+    echo "STOP: backingfiles/mutable partitions are not located after root."
+    echo "Refusing destructive resize on unexpected partition ordering."
+    exit 1
+  fi
+
+  local disk_sectors
+  disk_sectors=$(blockdev --getsz "$BOOT_DISK")
+  local root_start_sectors
+  root_start_sectors=$(partx --show -g -o START "$ROOT_PARTITION_DEVICE")
+  local requested_last_sector=$((root_start_sectors + requested_size_sectors - 1))
+  local disk_last_sector=$((disk_sectors - 1))
+  if [ "$requested_last_sector" -gt "$disk_last_sector" ]
+  then
+    echo "STOP: requested root size '$requested_size_human' exceeds available disk size."
+    exit 1
+  fi
+
+  echo ""
+  echo "=============================================================="
+  echo "WARNING: DESTRUCTIVE OPERATION"
+  echo "This command will delete /backingfiles and /mutable partitions."
+  echo "All Tesla recordings, snapshots, and mutable state will be lost."
+  echo "Disk: $BOOT_DISK"
+  echo "Root partition: $ROOT_PARTITION_DEVICE"
+  echo "Requested root size: $requested_size_human"
+  echo "=============================================================="
+  echo ""
+
+  if [ "${FORCE_EXPAND_ROOT:-0}" != "1" ]
+  then
+    if [ ! -t 0 ]
+    then
+      echo "STOP: non-interactive shell detected. Set FORCE_EXPAND_ROOT=1 to proceed."
+      exit 1
+    fi
+
+    read -r -p "Type ERASE_RECORDINGS to continue: " confirmation
+    if [ "$confirmation" != "ERASE_RECORDINGS" ]
+    then
+      echo "Aborted."
+      exit 1
+    fi
+  fi
+
+  /root/bin/remountfs_rw
+
+  rm -rf "$expand_root_backup_dir"
+  mkdir -p "$expand_root_backup_dir"
+  backup_mutable_link_target_if_present /etc/resolv.conf "$expand_root_backup_dir/resolv.conf"
+  backup_mutable_link_target_if_present /etc/fake-hwclock.data "$expand_root_backup_dir/fake-hwclock.data"
+  backup_mutable_link_target_if_present /var/lib/NetworkManager "$expand_root_backup_dir/NetworkManager"
+
+  systemctl stop teslausb-node teslausb nginx fcgiwrap fcgiwrap.socket autofs smbd || true
+  /root/bin/disable_gadget.sh || true
+
+  umount /var/www/html/TeslaCam || true
+  umount /tmp/cam/merged /mnt/cam /mnt/music /mnt/lightshow /mnt/boombox /mnt/archive /mnt/musicarchive || true
+  umount /backingfiles || umount -l /backingfiles || true
+  umount /mutable || umount -l /mutable || true
+
+  if findmnt --mountpoint /backingfiles > /dev/null 2>&1
+  then
+    echo "STOP: /backingfiles is still mounted. Resolve open file handles before retrying expand_root."
+    exit 1
+  fi
+  if findmnt --mountpoint /mutable > /dev/null 2>&1
+  then
+    echo "STOP: /mutable is still mounted. Resolve open file handles before retrying expand_root."
+    exit 1
+  fi
+
+  # Remove mount entries before deleting partitions so next boot doesn't fail.
+  sed -i '/LABEL=backingfiles/d' /etc/fstab
+  sed -i '/LABEL=mutable/d' /etc/fstab
+
+  # Delete higher-numbered partition first.
+  if [ -n "$mutable_num" ] && [ -n "$backing_num" ] && [ "$mutable_num" -lt "$backing_num" ]
+  then
+    delete_partition_if_present "$backing_num"
+    delete_partition_if_present "$mutable_num"
+  else
+    delete_partition_if_present "$mutable_num"
+    delete_partition_if_present "$backing_num"
+  fi
+
+  echo "$root_start_sectors,$requested_size_sectors" | sfdisk --force "$BOOT_DISK" -N "$ROOT_PART_NUM"
+
+  partprobe "$BOOT_DISK" || true
+  resize2fs "$ROOT_PARTITION_DEVICE"
+
+  # Create temporary fallback directories/files on rootfs so the next boot can
+  # come up far enough to run setup-teslausb upgrade and recreate partitions.
+  mkdir -p /backingfiles /mutable/etc /mutable/configs /mutable/var/lib/NetworkManager
+  if [ -e "$expand_root_backup_dir/resolv.conf" ]
+  then
+    cp -a "$expand_root_backup_dir/resolv.conf" /mutable/resolv.conf
+  elif [ -L /etc/resolv.conf ] && [ ! -e /mutable/resolv.conf ]
+  then
+    printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /mutable/resolv.conf
+  fi
+  if [ -e "$expand_root_backup_dir/fake-hwclock.data" ]
+  then
+    cp -a "$expand_root_backup_dir/fake-hwclock.data" /mutable/etc/fake-hwclock.data
+  elif [ -L /etc/fake-hwclock.data ] && [ ! -e /mutable/etc/fake-hwclock.data ]
+  then
+    touch /mutable/etc/fake-hwclock.data
+  fi
+  if [ -d "$expand_root_backup_dir/NetworkManager" ]
+  then
+    rm -rf /mutable/var/lib/NetworkManager
+    cp -a "$expand_root_backup_dir/NetworkManager" /mutable/var/lib/NetworkManager
+  fi
+  if [ -L /var/lib/NetworkManager ] && [ ! -d /mutable/var/lib/NetworkManager ]
+  then
+    mkdir -p /mutable/var/lib/NetworkManager
+  fi
+
+  echo "Root expansion complete."
+  echo "Next steps:"
+  echo "  1) reboot"
+  echo "  2) run '$0 upgrade' to recreate backingfiles/mutable and continue setup"
 }
 
 function cmd_install {
@@ -991,9 +1214,6 @@ copy_script setup/pi/configure-automount.sh /tmp
 
 copy_script setup/pi/configure-web.sh /tmp
 /tmp/configure-web.sh
-
-copy_script setup/pi/configure-ssh.sh /tmp
-/tmp/configure-ssh.sh
 
 # source setup-teslausb from .bashrc to set up completion
 if ! grep -q envsetup.sh /root/.bashrc

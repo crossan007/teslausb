@@ -4,9 +4,11 @@ This is a streamlined process for setting up the Pi. You'll flash a preconfigure
 
 ## Notes
 
+- **Current TypeScript runtime branch limitation:** only `ARCHIVE_SYSTEM=rsync` is supported at runtime. Setup paths that use `none`, `rclone`, `cifs`, or `nfs` are legacy-only until those TS backends are implemented.
+
 - Assumes your Pi has access to Wifi, with internet access (during setup). (But all setup methods do currently.) USB networking is still enabled for troubleshooting or manual setup
 - This image will work for either _headless_ (tested) or _manual_ (tested less) setup.
-- Currently not tested with the rclone method when using headless setup, however you can specify 'none' as the archive method in the config file, which will configure the pi as a wifi-accessible USB drive, so you can then [configure rclone](./SetupRClone.md) or [configure rsync](./SetupRSync.md) and rerun the setup-teslausb script.
+- Legacy note: previous bash runtime workflows allowed starting with `none` and later switching to `rclone`/`cifs`/`nfs`. In the current TS branch, use `rsync` for live testing.
 
 ## Configure the SD card before first boot of the Pi
 
@@ -72,7 +74,7 @@ This is a streamlined process for setting up the Pi. You'll flash a preconfigure
 
 The Pi should be available for `ssh` at `pi@teslausb.local`, over Wifi (if automatic setup works) or USB networking (if it doesn't). It takes about 5 minutes, or more depending on network speed, etc. The default password for user `pi@teslausb.local` is `raspberry`.
 
-If plugged into just a power source, or your car, give it a few minutes until the LED starts pulsing steadily which means the archive loop is running and you're good to go.
+If plugged into just a power source, or your car, give it a few minutes until the LED starts pulsing steadily which means the archive service is running and you're good to go.
 
 You should see in `/teslausb` the `TESLAUSB_SETUP_FINISHED` and `WIFI_ENABLED` files as markers of headless setup success as well.
 
@@ -121,7 +123,7 @@ When the Pi boots the first time:
 - The Pi LED will flash patterns (2, 3, 4, 5) as it gets to each stage (labeled in the setup-teslausb script).
 - After the final stage and reboot the LED will go back to normal. Remember, the step to remount the filesystem takes a few minutes.
 
-At this point the next boot should start the Dashcam/music drives like normal. If you're watching the LED it will start flashing every 1 second, which is the archive loop running.
+At this point the next boot should start the Dashcam/music drives like normal. If you're watching the LED it will start flashing every 1 second, which indicates the archive service is running.
 
 > **Note** Don't delete the `TESLAUSB_SETUP_FINISHED` or `WIFI_ENABLED` files. This is how the system knows setup is complete.
 

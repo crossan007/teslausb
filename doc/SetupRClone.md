@@ -1,5 +1,7 @@
 # Introduction
 
+> **Current TypeScript runtime limitation:** this guide is currently legacy-only. The active TS runtime path supports `ARCHIVE_SYSTEM=rsync` only until `rclone` backend support is implemented.
+
 This guide will show you how to install and configure [rclone](https://rclone.org/) to archive your saved TeslaCam footage on one of a number of different remote storage services including Google Drive, S3 and Dropbox.
 
 # Easy rclone setup
@@ -35,7 +37,7 @@ You must perform these steps **after** getting a shell on the Pi and **before** 
 
 **Make sure to run all commands in these instructions in a single command shell as root. When you return to the [Main Instructions](/README.md) continue running the commands there in this same shell.** This is necessary because:
 
-- The `archiveloop` script runs as root and the rclone config is bound to the user running the config.
+- In the legacy bash runtime, `archiveloop` runs as root and the rclone config is bound to the user running the config.
 - These commands define environment variables that the main setup scripts need.
 
 # Quick guide

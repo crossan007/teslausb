@@ -1,5 +1,7 @@
 # Hosting the archive on Windows File Shares, MacOS Sharing, or Samba on Linux
 
+> **Current TypeScript runtime limitation:** this guide is currently legacy-only. The active TS runtime path supports `ARCHIVE_SYSTEM=rsync` only until `cifs` backend support is implemented.
+
 Set up a share to host the archive on a computer on your home network. These instructions assume that you created a share named "SailfishCam" on the server "Nautilus".
 
 It is recommended that you create a new user. Grant the user you'll be using read/write access to the share. These instructions will assume that the user you've created is named "sailfish" and that the password for this user is "pa$$w0rd".
