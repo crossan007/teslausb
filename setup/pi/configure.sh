@@ -876,6 +876,12 @@ function install_node_backend_runtime() {
 
   log_progress "Installing node backend packages"
   pushd "$app_dir" > /dev/null
+  log_progress "Configuring on-device Node build for CommonJS runtime compatibility"
+  /usr/local/bin/npm pkg set type=commonjs
+  if [ -e tsconfig.json ]
+  then
+    sed -i 's/"module": "ESNext"/"module": "CommonJS"/' tsconfig.json
+  fi
   log_progress "Removing non-runtime dev tooling from on-device package manifest"
   /usr/local/bin/npm pkg delete \
     devDependencies.@typescript-eslint/eslint-plugin \
