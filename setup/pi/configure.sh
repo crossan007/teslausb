@@ -869,11 +869,6 @@ function install_node_backend_runtime() {
 
   cp -r "$SOURCE_DIR/src" "$app_dir/"
   cp "$SOURCE_DIR/package.json" "$app_dir/"
-
-  if [ -e "$SOURCE_DIR/package-lock.json" ]
-  then
-    cp "$SOURCE_DIR/package-lock.json" "$app_dir/"
-  fi
   if [ -e "$SOURCE_DIR/tsconfig.json" ]
   then
     cp "$SOURCE_DIR/tsconfig.json" "$app_dir/"
@@ -881,12 +876,14 @@ function install_node_backend_runtime() {
 
   log_progress "Installing node backend packages"
   pushd "$app_dir" > /dev/null
-  if [ -e package-lock.json ]
-  then
-    /usr/local/bin/npm ci
-  else
-    /usr/local/bin/npm install
-  fi
+  log_progress "Removing non-runtime dev tooling from on-device package manifest"
+  /usr/local/bin/npm pkg delete \
+    devDependencies.@typescript-eslint/eslint-plugin \
+    devDependencies.@typescript-eslint/parser \
+    devDependencies.eslint \
+    devDependencies.tsx \
+    devDependencies.vitest
+  /usr/local/bin/npm install --no-audit --no-fund --progress=false
 
   log_progress "Building node backend"
   /usr/local/bin/npm run build
