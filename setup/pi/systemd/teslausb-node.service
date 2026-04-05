@@ -7,11 +7,12 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/root/teslausb-node
-ExecStart=/usr/local/bin/node /root/teslausb-node/dist/orchestrator/index.js
+ExecStart=/usr/local/bin/node /root/teslausb-node/dist/server/index.js
 Restart=always
 RestartSec=2
 TimeoutStopSec=30
 KillMode=control-group
+Environment=LOG_LEVEL=debug
 
 [Install]
 WantedBy=backingfiles.mount

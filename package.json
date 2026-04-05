@@ -6,7 +6,7 @@
   "packageManager": "pnpm@8.0.0",
   "scripts": {
     "build": "tsc",
-    "dev": "tsx ./src/orchestrator/index.ts",
+    "dev": "tsx ./src/server/index.ts",
     "test": "vitest",
     "test:watch": "vitest --watch",
     "test:ui": "vitest --ui",

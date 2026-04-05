@@ -2,7 +2,7 @@
  * Legacy lineage:
  * - run/archiveloop (service entrypoint replacement)
  */
-import { configLoader } from '../config';
+import { TeslaUSBConfig } from '../../types';
 import { logger, stateManager } from '../core';
 import { gadgetManager } from '../core/gadget-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
@@ -16,10 +16,15 @@ import { SnapshotManager } from './snapshot-manager';
 import { SnapshotEventCoordinator } from './snapshot-event-coordinator';
 import { ArchiveEventBus, PushMessageEventHandler, TeslaApiInteropEventHandler } from './events';
 
+export interface OrchestratorContext {
+  eventBus: ArchiveEventBus;
+  snapshotManager: SnapshotManager;
+}
+
 const ARCHIVED_LIST_PATH = '/mutable/sentry_files_archived';
 const CAM_DISK_PATH = '/backingfiles/cam_disk.bin';
 
-function createArchiveBackend(config: ReturnType<typeof configLoader.get>): ArchiveBackend {
+function createArchiveBackend(config: TeslaUSBConfig): ArchiveBackend {
   switch (config.archiveSystem) {
     case 'rsync':
       return new RsyncBackend({
@@ -40,7 +45,7 @@ function createArchiveBackend(config: ReturnType<typeof configLoader.get>): Arch
 /**
  * Builds legacy trigger file relative paths from configuration.
  */
-function buildFinishTriggerFilePaths(config: ReturnType<typeof configLoader.get>): string[] {
+function buildFinishTriggerFilePaths(config: TeslaUSBConfig): string[] {
   const triggerFilePaths: string[] = [];
 
   if (config.triggerFileSaved) {
@@ -66,8 +71,7 @@ function buildStartTriggerFilePaths(finishTriggerFilePaths: string[]): string[] 
   return finishTriggerFilePaths.map((path) => `${path}.start`);
 }
 
-async function main(): Promise<void> {
-  const config = configLoader.get();
+export async function startOrchestrator(config: TeslaUSBConfig): Promise<OrchestratorContext> {
   await gadgetManager.enable();
   logger.info('USB gadget enabled');
   const backend = createArchiveBackend(config);
@@ -152,12 +156,5 @@ async function main(): Promise<void> {
   lifecycleLoop.start();
   logger.info('Clip discovery loop started');
 
-  await new Promise<void>(() => {
-    // Keep service alive; discovery loop and subscriptions drive execution.
-  });
+  return { eventBus, snapshotManager };
 }
-
-main().catch((error) => {
-  logger.error({ error }, 'Orchestrator entrypoint failed');
-  process.exit(1);
-});

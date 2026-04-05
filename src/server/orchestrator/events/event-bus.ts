@@ -1,6 +1,6 @@
 import { Observable, Subject } from 'rxjs';
 import { logger } from '../../core/logger';
-import { Snapshot } from '../../types';
+import { Snapshot } from '../../../types';
 
 /**
  * Supported orchestrator event names.
