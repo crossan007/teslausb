@@ -7,4 +7,5 @@ export const NUMERIC_ENV_KEYS = new Set([
   'SENTRY_CASE',
   'GOTIFY_PRIORITY',
   'SYSTEM_STATUS_PING_PACKET_SIZE',
+  'WEB_PORT',
 ]);

@@ -83,7 +83,7 @@ export class ConfigLoader {
 	 */
 	private sanitizeLogging(config: TeslaUSBConfig): Partial<TeslaUSBConfig> {
 		const sanitized = { ...config };
-		const sensitiveKeys = ['sharePassword', 'teslaPassword', 'pushoverUserKey', 'tessieApiToken'];
+    const sensitiveKeys = ['sharePassword', 'teslaPassword', 'pushoverUserKey', 'tessieApiToken', 'webPassword'];
 		for (const key of sensitiveKeys) {
 			if (key in sanitized) {
 				(sanitized as any)[key] = '***';

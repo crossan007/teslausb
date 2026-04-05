@@ -1,7 +1,8 @@
-import express, { Express, Request, Response } from 'express';
+import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Server as HttpServer } from 'http';
+import { existsSync } from 'fs';
 import { logger } from '../core/logger';
 import {
   SystemStatusView,
@@ -14,6 +15,9 @@ export interface WebServerOptions {
   corsOrigins?: string | string[];
   publicApiBaseUrl?: string;
   publicWsUrl?: string;
+  staticPath?: string;
+  webUsername?: string;
+  webPassword?: string;
   systemStatusView: SystemStatusView;
   transferSessionView: TransferSessionViewService;
   snapshotListView: SnapshotListViewService;
@@ -30,15 +34,21 @@ export class WebServer {
   private corsOrigins: string | string[];
   private publicApiBaseUrl: string;
   private publicWsUrl: string;
+  private staticPath: string;
+  private webUsername?: string;
+  private webPassword?: string;
   private readonly systemStatusView: SystemStatusView;
   private readonly transferSessionView: TransferSessionViewService;
   private readonly snapshotListView: SnapshotListViewService;
 
   constructor(options: WebServerOptions) {
-    this.port = options.port ?? 3000;
+    this.port = options.port ?? 80;
     this.corsOrigins = options.corsOrigins ?? '*';
     this.publicApiBaseUrl = options.publicApiBaseUrl ?? `http://localhost:${this.port}`;
     this.publicWsUrl = options.publicWsUrl ?? `ws://localhost:${this.port}`;
+    this.staticPath = options.staticPath ?? '/root/teslausb-node/html';
+    this.webUsername = options.webUsername;
+    this.webPassword = options.webPassword;
     this.systemStatusView = options.systemStatusView;
     this.transferSessionView = options.transferSessionView;
     this.snapshotListView = options.snapshotListView;
@@ -53,6 +63,23 @@ export class WebServer {
   }
 
   private setupMiddleware(): void {
+    // Optional basic auth (applied before everything else)
+    if (this.webUsername && this.webPassword) {
+      const user = this.webUsername;
+      const pass = this.webPassword;
+      this.app.use((_req: Request, res: Response, next: NextFunction) => {
+        const auth = _req.headers.authorization;
+        if (auth && auth.startsWith('Basic ')) {
+          const [u, p] = Buffer.from(auth.slice(6), 'base64').toString().split(':', 2);
+          if (u === user && p === pass) {
+            return next();
+          }
+        }
+        res.setHeader('WWW-Authenticate', 'Basic realm="TeslaUSB"');
+        res.status(401).send('Unauthorized');
+      });
+    }
+
     this.app.use(
       cors({
         origin: this.corsOrigins === '*' ? '*' : this.corsOrigins,
@@ -127,6 +154,20 @@ export class WebServer {
         wsUrl: this.publicWsUrl,
       });
     });
+
+    // TeslaCam video/clip browser — served from FUSE mount (cttseraser for Chrome compat)
+    this.app.use('/TeslaCam', express.static('/mnt/TeslaCam', { index: false }));
+
+    // React SPA static files
+    if (existsSync(this.staticPath)) {
+      this.app.use(express.static(this.staticPath));
+      // SPA fallback: all non-API, non-TeslaCam routes serve index.html
+      this.app.get('*', (_req: Request, res: Response) => {
+        res.sendFile('index.html', { root: this.staticPath });
+      });
+    } else {
+      logger.warn({ staticPath: this.staticPath }, 'Static files path does not exist; SPA not served');
+    }
   }
 
   private setupWebSocket(): void {

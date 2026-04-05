@@ -81,6 +81,10 @@ export const ConfigSchema = z.object({
   publicApiBaseUrl: z.string().optional(),
   publicWsUrl: z.string().optional(),
   uiCorsOrigins: z.string().default('*'),
+  webPort: z.number().default(80),
+  webUsername: z.string().optional(),
+  webPassword: z.string().optional(),
+  webStaticPath: z.string().default('/root/teslausb-node/html'),
   systemStatusDefaultGateway: z.string().default('192.168.1.1'),
   systemStatusPingPacketSize: z.number().default(1024),
 

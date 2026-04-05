@@ -39,13 +39,16 @@ export class WebServerIntegration {
     this.snapshotListView = new SnapshotListViewService(eventBus);
 
     this.webServer = new WebServer({
-      port: 3000,
+      port: config.webPort,
       corsOrigins: config.uiCorsOrigins,
       systemStatusView,
       transferSessionView: this.transferSessionView,
       snapshotListView: this.snapshotListView,
       publicApiBaseUrl: config.publicApiBaseUrl,
       publicWsUrl: config.publicWsUrl,
+      staticPath: config.webStaticPath,
+      webUsername: config.webUsername,
+      webPassword: config.webPassword,
       ...options,
     });
 
