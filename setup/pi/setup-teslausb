@@ -817,6 +817,90 @@ function cmd_upgrade_finish {
   reboot
 }
 
+# update_web: rebuild and restart only the Node/TypeScript backend without rebooting.
+# Fetches the latest setup-teslausb from the repo then delegates to update_web_apply
+# so the freshest version of the apply logic always runs.
+function cmd_update_web {
+  copy_script setup/pi/setup-teslausb /tmp &> /dev/null
+  exec /tmp/setup-teslausb update_web_apply "$@"
+}
+
+function cmd_update_web_apply {
+  local app_dir=/root/teslausb-node
+
+  if [ ! -x /usr/local/bin/node ]
+  then
+    setup_progress "STOP: node is not installed at /usr/local/bin/node. Run 'setup-teslausb upgrade' first."
+    exit 1
+  fi
+
+  if [ ! -d "$app_dir" ]
+  then
+    setup_progress "STOP: $app_dir does not exist. Run 'setup-teslausb upgrade' first to do the initial install."
+    exit 1
+  fi
+
+  setup_progress "update_web: remounting root filesystem read-write"
+  /root/bin/remountfs_rw
+
+  setup_progress "update_web: stopping teslausb-node"
+  systemctl stop teslausb-node || true
+
+  setup_progress "update_web: copying updated sources to $app_dir"
+  cp -r "$SOURCE_DIR/src" "$app_dir/"
+  cp "$SOURCE_DIR/package.json" "$app_dir/"
+  if [ -e "$SOURCE_DIR/tsconfig.json" ]
+  then
+    cp "$SOURCE_DIR/tsconfig.json" "$app_dir/"
+  fi
+
+  pushd "$app_dir" > /dev/null
+
+  setup_progress "update_web: patching package for CommonJS runtime"
+  /usr/local/bin/npm pkg set type=commonjs
+  if [ -e tsconfig.json ]
+  then
+    sed -i 's/"module": "ESNext"/"module": "CommonJS"/' tsconfig.json
+  fi
+
+  # Re-install deps only when package.json changed since last install.
+  local pkg_checksum pkg_stamp_file installed_checksum
+  pkg_checksum="$(sha256sum package.json | awk '{print $1}')"
+  pkg_stamp_file="$app_dir/.pkg_checksum"
+  installed_checksum=""
+  if [ -f "$pkg_stamp_file" ]
+  then
+    installed_checksum="$(cat "$pkg_stamp_file")"
+  fi
+
+  if [ "$pkg_checksum" != "$installed_checksum" ] || [ ! -d node_modules ]
+  then
+    setup_progress "update_web: package.json changed or node_modules missing – reinstalling dependencies"
+    /usr/local/bin/npm pkg delete \
+      devDependencies.@typescript-eslint/eslint-plugin \
+      devDependencies.@typescript-eslint/parser \
+      devDependencies.eslint \
+      devDependencies.tsx \
+      devDependencies.vitest
+    /usr/local/bin/npm install --no-audit --no-fund --progress=false
+    /usr/local/bin/npm prune --omit=dev
+    echo "$pkg_checksum" > "$pkg_stamp_file"
+  else
+    setup_progress "update_web: dependencies up to date, skipping npm install"
+  fi
+
+  setup_progress "update_web: building node backend"
+  /usr/local/bin/npm run build
+
+  popd > /dev/null
+
+  setup_progress "update_web: restarting teslausb-node"
+  systemctl start teslausb-node
+
+  setup_progress "update_web: done"
+  systemctl status teslausb-node --no-pager || true
+}
+
 function checkmounted() {
   if ! findmnt "$1" &> /dev/null
   then
