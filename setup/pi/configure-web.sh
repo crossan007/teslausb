@@ -30,6 +30,32 @@ echo "mount.ctts#/mutable/TeslaCam /mnt/TeslaCam fuse defaults,nofail,x-systemd.
 
 # Static SPA directory served by Express
 mkdir -p /root/teslausb-node/html
+find /root/teslausb-node/html -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+cp -r "$SOURCE_DIR/teslausb-www/html/." /root/teslausb-node/html/
+
+# Install prebuilt TeslaUSB web UI into Express static path.
+# Prefer the configured REPO/BRANCH first, then fall back to default upstream.
+WEBUI_REPO="${REPO:-marcone}"
+WEBUI_BRANCH="${BRANCH:-main-dev}"
+WEBUI_URL_PRIMARY="https://raw.githubusercontent.com/${WEBUI_REPO}/teslausb/${WEBUI_BRANCH}/teslausb-ui.tgz"
+WEBUI_URL_FALLBACK_REPO="https://github.com/${WEBUI_REPO}/teslausb-webui/releases/latest/download/teslausb-ui.tgz"
+WEBUI_URL_FALLBACK_DEFAULT="https://github.com/marcone/teslausb-webui/releases/latest/download/teslausb-ui.tgz"
+
+if ! curlwrapper -L -o /tmp/webui.tgz "$WEBUI_URL_PRIMARY"
+then
+  setup_progress "webui bundle not found at ${WEBUI_URL_PRIMARY}; trying ${WEBUI_URL_FALLBACK_REPO}"
+  if ! curlwrapper -L -o /tmp/webui.tgz "$WEBUI_URL_FALLBACK_REPO"
+  then
+    setup_progress "webui bundle not found at ${WEBUI_URL_FALLBACK_REPO}; trying ${WEBUI_URL_FALLBACK_DEFAULT}"
+    curlwrapper -L -o /tmp/webui.tgz "$WEBUI_URL_FALLBACK_DEFAULT"
+  fi
+fi
+
+tar -C /root/teslausb-node/html -xf /tmp/webui.tgz
+if [ -d /root/teslausb-node/html/new ] && ! [ -e /root/teslausb-node/html/new/favicon.ico ]
+then
+  ln -s /root/teslausb-node/html/favicon.ico /root/teslausb-node/html/new/favicon.ico
+fi
 
 # Write web auth credentials into the config file so ConfigLoader picks them up.
 # Existing WEB_USERNAME/WEB_PASSWORD entries are replaced.

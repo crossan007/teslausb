@@ -1,7 +1,6 @@
 import { logger } from '../core/logger';
 import { ArchiveEventBusLike } from '../orchestrator/events';
 import { SystemStatusManager } from '../core/system-status-manager';
-import { SnapshotManager } from '../orchestrator/snapshot-manager';
 import { TeslaUSBConfig } from '../../types';
 import {
   SystemStatusView,
@@ -22,18 +21,9 @@ export class WebServerIntegration {
   constructor(
     eventBus: ArchiveEventBusLike,
     statusManager: SystemStatusManager,
-    snapshotManager: SnapshotManager,
     config: TeslaUSBConfig,
     options?: Partial<WebServerOptions>,
   ) {
-    // Inject snapshot manager and config overrides into system status manager
-    statusManager = new SystemStatusManager({
-      snapshotManager,
-      defaultGateway: config.systemStatusDefaultGateway,
-      pingPacketSize: config.systemStatusPingPacketSize,
-      commandRunner: (statusManager as any).commandRunner,
-    });
-
     const systemStatusView = new SystemStatusView(statusManager);
     this.transferSessionView = new TransferSessionViewService(eventBus);
     this.snapshotListView = new SnapshotListViewService(eventBus);

@@ -1,7 +1,7 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { WebSocketServer, WebSocket } from 'ws';
-import { Server as HttpServer } from 'http';
+import { createServer, Server as HttpServer } from 'http';
 import { existsSync } from 'fs';
 import { logger } from '../core/logger';
 import {
@@ -54,7 +54,7 @@ export class WebServer {
     this.snapshotListView = options.snapshotListView;
 
     this.app = express();
-    this.httpServer = new (require('http') as typeof import('http')).Server(this.app);
+    this.httpServer = createServer(this.app);
     this.wss = new WebSocketServer({ server: this.httpServer });
 
     this.setupMiddleware();
