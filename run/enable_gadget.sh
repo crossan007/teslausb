@@ -18,7 +18,17 @@ readonly cfg=c
 
 if [ -d "$gadget_root" ]
 then
-  echo "already prepared"
+  udc_name=$(find /sys/class/udc -type l -printf '%P\n' | head -1)
+  if [ -z "$udc_name" ]
+  then
+    echo "error: no UDC found"
+    exit 1
+  fi
+
+  # Force rebind so host sees a fresh attach event.
+  echo > "$gadget_root/UDC" || true
+  echo "$udc_name" > "$gadget_root/UDC"
+  echo "already prepared (rebound to $udc_name)"
   exit 0
 fi
 

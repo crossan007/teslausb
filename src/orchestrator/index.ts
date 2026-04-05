@@ -4,6 +4,7 @@
  */
 import { configLoader } from '../config';
 import { logger, stateManager } from '../core';
+import { gadgetManager } from '../core/gadget-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend, supportsTriggerFileWrites } from '../types';
 import { ClipDiscoveryManager } from './clip-discovery-manager';
@@ -65,6 +66,8 @@ function buildStartTriggerFilePaths(finishTriggerFilePaths: string[]): string[] 
 
 async function main(): Promise<void> {
   const config = configLoader.get();
+  await gadgetManager.enable();
+  logger.info('USB gadget enabled');
   const backend = createArchiveBackend(config);
   const finishTriggerFilePaths = buildFinishTriggerFilePaths(config);
   const startTriggerFilePaths = config.triggerFileStartEnabled
