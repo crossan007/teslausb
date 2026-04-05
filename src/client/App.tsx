@@ -8,7 +8,8 @@ import './App.css';
 
 export default function App() {
   const [configLoaded, setConfigLoaded] = useState(false);
-  const wsResult = useWebSocket('');
+  const wsUrl = configLoaded ? `${getConfig().wsUrl}/ws` : '';
+  const wsResult = useWebSocket(wsUrl);
 
   useEffect(() => {
     loadConfig()
@@ -28,7 +29,6 @@ export default function App() {
   }
 
   const config = getConfig();
-  const wsUrl = config.wsUrl + '/ws'; // WebSocket endpoint
 
   return (
     <div className="App">

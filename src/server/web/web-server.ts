@@ -32,8 +32,8 @@ export class WebServer {
   private wss: WebSocketServer;
   private port: number;
   private corsOrigins: string | string[];
-  private publicApiBaseUrl: string;
-  private publicWsUrl: string;
+  private publicApiBaseUrl?: string;
+  private publicWsUrl?: string;
   private staticPath: string;
   private webUsername?: string;
   private webPassword?: string;
@@ -44,8 +44,8 @@ export class WebServer {
   constructor(options: WebServerOptions) {
     this.port = options.port ?? 80;
     this.corsOrigins = options.corsOrigins ?? '*';
-    this.publicApiBaseUrl = options.publicApiBaseUrl ?? `http://localhost:${this.port}`;
-    this.publicWsUrl = options.publicWsUrl ?? `ws://localhost:${this.port}`;
+    this.publicApiBaseUrl = options.publicApiBaseUrl;
+    this.publicWsUrl = options.publicWsUrl;
     this.staticPath = options.staticPath ?? '/root/teslausb-node/html';
     this.webUsername = options.webUsername;
     this.webPassword = options.webPassword;
@@ -149,9 +149,18 @@ export class WebServer {
 
     // Frontend config (backend URL, api endpoints, etc)
     this.app.get('/api/config', (_req: Request, res: Response) => {
+      const host = _req.get('host') ?? `localhost:${this.port}`;
+      const forwardedProto = _req.headers['x-forwarded-proto'];
+      const effectiveProto = typeof forwardedProto === 'string'
+        ? forwardedProto.split(',')[0].trim()
+        : _req.protocol;
+      const isSecure = effectiveProto === 'https';
+      const derivedApiBaseUrl = `${isSecure ? 'https' : 'http'}://${host}`;
+      const derivedWsUrl = `${isSecure ? 'wss' : 'ws'}://${host}`;
+
       res.json({
-        apiBaseUrl: this.publicApiBaseUrl,
-        wsUrl: this.publicWsUrl,
+        apiBaseUrl: this.publicApiBaseUrl ?? derivedApiBaseUrl,
+        wsUrl: this.publicWsUrl ?? derivedWsUrl,
       });
     });
 

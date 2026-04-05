@@ -76,6 +76,10 @@ export function useWebSocket(url: string) {
   const reconnectDelay = useRef(1000);
 
   const connect = useCallback(() => {
+    if (!url) {
+      return;
+    }
+
     try {
       console.log(`Connecting to WebSocket: ${url}`);
       ws.current = new WebSocket(url);
@@ -132,6 +136,12 @@ export function useWebSocket(url: string) {
   }, [url]);
 
   useEffect(() => {
+    if (!url) {
+      setIsConnected(false);
+      setLastMessage(null);
+      return;
+    }
+
     connect();
 
     return () => {
