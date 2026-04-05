@@ -26,12 +26,17 @@ describe('MaintenanceExecutionWorker', () => {
       await writeFile(camDiskPath, Buffer.alloc(1024));
 
       const worker = new MaintenanceExecutionWorker(
-        new SnapshotManager(300),
-        new FreeSpaceManager(1, 1),
-        {
+        new SnapshotManager(300, {
           camDiskPath,
           snapshotRootPath,
           snapshotCopier: plainSnapshotCopy,
+          stateSink: {
+            writeSnapshot: () => undefined,
+          },
+        }),
+        new FreeSpaceManager(1, 1),
+        {
+          camDiskPath,
           nowEpochProvider: (() => {
             let now = 1_000;
             return () => {
@@ -84,13 +89,18 @@ describe('MaintenanceExecutionWorker', () => {
       );
 
       const worker = new MaintenanceExecutionWorker(
-        new SnapshotManager(10_000),
-        new FreeSpaceManager(50, 100),
-        {
+        new SnapshotManager(10_000, {
           camDiskPath,
           snapshotRootPath,
           mutableTeslaCamPath,
           snapshotCopier: plainSnapshotCopy,
+          stateSink: {
+            writeSnapshot: () => undefined,
+          },
+        }),
+        new FreeSpaceManager(50, 100),
+        {
+          camDiskPath,
           nowEpochProvider: () => 5_000,
           diskUsageProvider: (() => {
             let callCount = 0;
@@ -130,12 +140,17 @@ describe('MaintenanceExecutionWorker', () => {
       await writeFile(camDiskPath, Buffer.alloc(1));
 
       const worker = new MaintenanceExecutionWorker(
-        new SnapshotManager(10_000),
-        new FreeSpaceManager(50, 1024),
-        {
+        new SnapshotManager(10_000, {
           camDiskPath,
           snapshotRootPath,
           snapshotCopier: plainSnapshotCopy,
+          stateSink: {
+            writeSnapshot: () => undefined,
+          },
+        }),
+        new FreeSpaceManager(50, 1024),
+        {
+          camDiskPath,
           nowEpochProvider: () => 5_000,
           diskUsageProvider: async () => ({
             freeBytes: 100,

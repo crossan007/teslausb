@@ -11,11 +11,15 @@ import { ClipDiscoveryManager } from './clip-discovery-manager';
 import { ClipDiscoveryLoop } from './clip-discovery-loop';
 import { RsyncBackend } from './backends';
 import { RuntimeLifecycleLoop } from './runtime-lifecycle-loop';
+import { BackingImageChangeDetector } from './backing-image-change-detector';
+import { SnapshotManager } from './snapshot-manager';
+import { SnapshotEventCoordinator } from './snapshot-event-coordinator';
 import { ArchiveEventBus, PushMessageEventHandler, TeslaApiInteropEventHandler } from './events';
 
-const CLIP_DISCOVERY_ROOT = '/mutable/TeslaCam';
 const ARCHIVED_LIST_PATH = '/mutable/sentry_files_archived';
-const DISCOVERY_INTERVAL_MS = 5_000;
+const CHANGE_DETECT_POLL_MS = 1_000;
+const SNAPSHOT_DEBOUNCE_MS = 1_500;
+const CAM_DISK_PATH = '/backingfiles/cam_disk.bin';
 
 function createArchiveBackend(config: ReturnType<typeof configLoader.get>): ArchiveBackend {
   switch (config.archiveSystem) {
@@ -74,6 +78,18 @@ async function main(): Promise<void> {
     ? buildStartTriggerFilePaths(finishTriggerFilePaths)
     : [];
   const eventBus = new ArchiveEventBus();
+  const snapshotManager = new SnapshotManager();
+  const snapshotEventCoordinator = new SnapshotEventCoordinator({
+    eventBus,
+    snapshotManager,
+    debounceMs: SNAPSHOT_DEBOUNCE_MS,
+  });
+  const backingImageChangeDetector = new BackingImageChangeDetector({
+    imagePath: CAM_DISK_PATH,
+    eventBus,
+    pollIntervalMs: CHANGE_DETECT_POLL_MS,
+    emitInitialEvent: true,
+  });
   const pushMessageEventHandler = new PushMessageEventHandler(config.notificationTitle);
   const teslaApiInteropEventHandler = new TeslaApiInteropEventHandler();
   eventBus.subscribe(async (event) => {
@@ -106,13 +122,12 @@ async function main(): Promise<void> {
   const discovery = new ClipDiscoveryManager();
   const clipArchiveCoordinator = new ClipArchiveCoordinator(backend, undefined, undefined, stateManager);
   const discoveryLoop = new ClipDiscoveryLoop(discovery, {
-    rootPath: CLIP_DISCOVERY_ROOT,
     archivedListPath: ARCHIVED_LIST_PATH,
     includeSavedclips: config.archiveSavedclips,
     includeSentryclips: config.archiveSentryclips,
     includeTrackmodeclips: config.archiveTrackmodeclips,
     includeRecentclips: config.archiveRecentclips,
-    intervalMs: DISCOVERY_INTERVAL_MS,
+    eventBus,
     persistPendingClips: (pending) => stateManager.writePendingClips(pending),
   });
   const lifecycleLoop = new RuntimeLifecycleLoop(
@@ -121,7 +136,7 @@ async function main(): Promise<void> {
     clipArchiveCoordinator,
     backend,
     {
-      clipDiscoveryRoot: CLIP_DISCOVERY_ROOT,
+      clipDiscoveryRoot: '/tmp/snapshots',
       archivedListPath: ARCHIVED_LIST_PATH,
       archiveDelaySec: config.archiveDelay,
       startTriggerFilePaths,
@@ -133,8 +148,10 @@ async function main(): Promise<void> {
     },
   );
 
+  snapshotEventCoordinator.start();
+  backingImageChangeDetector.start();
   lifecycleLoop.start();
-  logger.info({ intervalMs: DISCOVERY_INTERVAL_MS }, 'Clip discovery loop started');
+  logger.info({ pollIntervalMs: CHANGE_DETECT_POLL_MS, debounceMs: SNAPSHOT_DEBOUNCE_MS }, 'Clip discovery loop started');
 
   await new Promise<void>(() => {
     // Keep service alive; discovery loop and subscriptions drive execution.

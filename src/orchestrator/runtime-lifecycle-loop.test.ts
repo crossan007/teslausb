@@ -166,7 +166,8 @@ describe('RuntimeLifecycleLoop', () => {
 
     loop.start();
     discoveryLoop.subject.next({
-      filePaths: ['SavedClips/evt1/file.mp4'],
+      rootPath: '/tmp/snapshots/snap-000001',
+      filePaths: ['TeslaCam/SavedClips/evt1/file.mp4'],
       pendingClips: pending(),
       candidatesDiscovered: 1,
       candidatesFiltered: 0,
@@ -176,7 +177,7 @@ describe('RuntimeLifecycleLoop', () => {
     await waitForCondition(() => orchestrator.calls === 1, 1000);
 
     expect(orchestrator.calls).toBe(1);
-    expect(manager.marked).toEqual(['SavedClips/evt1/file.mp4']);
+    expect(manager.marked).toEqual(['TeslaCam/SavedClips/evt1/file.mp4']);
     expect(triggerEvents.map((event) => event.type)).toEqual(['archive-start', 'archive-finish']);
     expect(syncStatusWrites.length).toBeGreaterThan(0);
 
@@ -220,7 +221,8 @@ describe('RuntimeLifecycleLoop', () => {
 
     loop.start();
     discoveryLoop.subject.next({
-      filePaths: ['SavedClips/evt1/file.mp4'],
+      rootPath: '/tmp/snapshots/snap-000001',
+      filePaths: ['TeslaCam/SavedClips/evt1/file.mp4'],
       pendingClips: pending(),
       candidatesDiscovered: 1,
       candidatesFiltered: 0,

@@ -25,6 +25,7 @@ export interface ClipDiscoveryOptions {
 }
 
 export interface ClipDiscoveryResult {
+  rootPath: string;
   filePaths: string[];
   pendingClips: PendingClips;
   candidatesDiscovered: number;
@@ -62,7 +63,7 @@ export class ClipDiscoveryManager {
 
     const eventDirs = new Set<string>();
     for (const entry of metadata) {
-      if (entry.relPath.startsWith('SavedClips/') || entry.relPath.startsWith('SentryClips/')) {
+      if (entry.relPath.startsWith('TeslaCam/SavedClips/') || entry.relPath.startsWith('TeslaCam/SentryClips/')) {
         const parentDir = this.parentDirectory(entry.relPath);
         if (parentDir) {
           eventDirs.add(parentDir);
@@ -75,6 +76,7 @@ export class ClipDiscoveryManager {
       : metadata.reduce((oldest, entry) => Math.max(oldest, entry.ageSec), 0);
 
     return {
+      rootPath: options.rootPath,
       filePaths: metadata.map((entry) => entry.relPath),
       pendingClips: {
         totalFiles: metadata.length,
@@ -125,10 +127,10 @@ export class ClipDiscoveryManager {
 
   private async discoverCandidateSymlinks(options: ClipDiscoveryOptions): Promise<string[]> {
     const categoryConfigs: ClipCategoryConfig[] = [
-      { directory: 'SavedClips', enabled: options.includeSavedclips ?? true },
-      { directory: 'SentryClips', enabled: options.includeSentryclips ?? true },
+      { directory: 'TeslaCam/SavedClips', enabled: options.includeSavedclips ?? true },
+      { directory: 'TeslaCam/SentryClips', enabled: options.includeSentryclips ?? true },
       { directory: 'TeslaTrackMode', enabled: options.includeTrackmodeclips ?? true },
-      { directory: 'RecentClips', enabled: options.includeRecentclips ?? false },
+      { directory: 'TeslaCam/RecentClips', enabled: options.includeRecentclips ?? false },
     ];
 
     const discovered = new Set<string>();

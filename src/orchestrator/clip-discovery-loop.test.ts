@@ -27,6 +27,7 @@ function makePending(filePaths: string[]): PendingClips {
 
 function makeResult(filePaths: string[]): ClipDiscoveryResult {
   return {
+    rootPath: '/tmp/snapshots/snap-000001',
     filePaths,
     pendingClips: makePending(filePaths),
     candidatesDiscovered: filePaths.length,
@@ -39,9 +40,9 @@ describe('ClipDiscoveryLoop', () => {
   it('emits only when clips are discovered and changed', async () => {
     const manager = new FakeDiscoveryManager([
       makeResult([]),
-      makeResult(['SavedClips/a.mp4']),
-      makeResult(['SavedClips/a.mp4']),
-      makeResult(['SavedClips/b.mp4']),
+      makeResult(['TeslaCam/SavedClips/a.mp4']),
+      makeResult(['TeslaCam/SavedClips/a.mp4']),
+      makeResult(['TeslaCam/SavedClips/b.mp4']),
     ]);
 
     const received: string[][] = [];
@@ -64,15 +65,15 @@ describe('ClipDiscoveryLoop', () => {
     loop.stop();
 
     expect(received).toEqual([
-      ['SavedClips/a.mp4'],
-      ['SavedClips/b.mp4'],
+      ['TeslaCam/SavedClips/a.mp4'],
+      ['TeslaCam/SavedClips/b.mp4'],
     ]);
   });
 
   it('persists pending clips for every poll', async () => {
     const manager = new FakeDiscoveryManager([
       makeResult([]),
-      makeResult(['SentryClips/a.mp4', 'SentryClips/b.mp4']),
+      makeResult(['TeslaCam/SentryClips/a.mp4', 'TeslaCam/SentryClips/b.mp4']),
     ]);
 
     const persist = vi.fn();

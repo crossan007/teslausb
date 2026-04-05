@@ -5,7 +5,7 @@
  */
 import { logger } from '../../core/logger';
 import { CommandRunner, defaultCommandRunner } from '../../shared/command-runner';
-import { ArchiveEvent, ArchiveEventHandler } from './event-bus';
+import { ArchiveEvent, ArchiveEventHandler, ArchiveLifecycleEvent } from './event-bus';
 
 /**
  * Sends legacy push notifications for archive lifecycle events.
@@ -46,14 +46,14 @@ export class PushMessageEventHandler implements ArchiveEventHandler {
   /**
    * Builds start-phase notification text from event payload.
    */
-  private buildStartMessage(event: ArchiveEvent): string {
+  private buildStartMessage(event: ArchiveLifecycleEvent): string {
     return `Archiving ${event.totalFiles} file(s) including ${event.totalEvents} event folder(s) starting at ${new Date(event.occurredAtMs).toString()}`;
   }
 
   /**
    * Builds finish-phase notification text from event payload.
    */
-  private buildFinishMessage(event: ArchiveEvent): string {
+  private buildFinishMessage(event: ArchiveLifecycleEvent): string {
     const prefix = event.succeeded ? 'Archiving completed successfully.' : 'Error during archiving.';
     const archivedCount = event.archivedFiles ?? 0;
     return `${prefix} Archived ${archivedCount} file(s).`;

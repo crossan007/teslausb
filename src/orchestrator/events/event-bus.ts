@@ -2,18 +2,23 @@ import { Observable, Subject } from 'rxjs';
 import { logger } from '../../core/logger';
 
 /**
- * Supported archive lifecycle event names.
+ * Supported orchestrator event names.
  */
-export type ArchiveEventType = 'archive-start' | 'archive-finish';
+export type ArchiveEventType =
+  | 'archive-start'
+  | 'archive-finish'
+  | 'backing-image-changed'
+  | 'snapshot-ready';
 
-/**
- * Event emitted for archive lifecycle transitions.
- */
-export interface ArchiveEvent {
-  /** Event type identifying lifecycle phase. */
+interface EventBase {
+  /** Event type identifying the payload variant. */
   type: ArchiveEventType;
   /** Unix epoch milliseconds for event time. */
   occurredAtMs: number;
+}
+
+export interface ArchiveLifecycleEvent extends EventBase {
+  type: 'archive-start' | 'archive-finish';
   /** Pending file count for the batch. */
   totalFiles: number;
   /** Pending event-directory count for the batch. */
@@ -25,6 +30,31 @@ export interface ArchiveEvent {
   /** Whether the cycle succeeded when finishing. */
   succeeded?: boolean;
 }
+
+export interface BackingImageChangedEvent extends EventBase {
+  type: 'backing-image-changed';
+  /** Backing image file path that changed. */
+  imagePath: string;
+  /** Byte size observed at detection time. */
+  imageSize: number;
+  /** File modification timestamp observed at detection time. */
+  imageMtimeMs: number;
+}
+
+export interface SnapshotReadyEvent extends EventBase {
+  type: 'snapshot-ready';
+  /** Snapshot id, e.g. snap-000001. */
+  snapshotId: string;
+  /** Snapshot image file path. */
+  snapshotFilePath: string;
+  /** Mounted root path to search/archive from. */
+  snapshotMountPath: string;
+}
+
+/**
+ * Event emitted for archive lifecycle transitions and storage changes.
+ */
+export type ArchiveEvent = ArchiveLifecycleEvent | BackingImageChangedEvent | SnapshotReadyEvent;
 
 /**
  * Handler contract for archive event side effects.

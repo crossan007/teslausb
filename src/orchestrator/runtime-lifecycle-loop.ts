@@ -147,7 +147,7 @@ export class RuntimeLifecycleLoop {
       let cycleResult;
       try {
         cycleResult = await this.clipArchiveCoordinator.runArchiveCycle({
-          fromPath: this.options.clipDiscoveryRoot,
+          fromPath: discoveryResult.rootPath,
           files: discoveryResult.filePaths,
         });
         cycleSucceeded = Boolean(cycleResult && !cycleResult.skipped && cycleResult.failed === 0);
@@ -156,7 +156,7 @@ export class RuntimeLifecycleLoop {
       }
 
       const archivedNow = await this.discoveryManager.resolveArchivedFromSource(
-        this.options.clipDiscoveryRoot,
+        discoveryResult.rootPath,
         discoveryResult.filePaths,
       );
 

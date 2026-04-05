@@ -36,6 +36,7 @@ export const SnapshotSchema = z.object({
   createdAt: z.number().default(0), // Unix timestamp
   filePath: z.string().default(''), // /backingfiles/snapshots/snap-XXXXXX/snap.bin
   tocPath: z.string().default(''), // /backingfiles/snapshots/snap-XXXXXX/snap.bin.toc
+  mountPath: z.string().default(''), // /tmp/snapshots/snap-XXXXXX
   size: z.number().default(0), // bytes
   isLinked: z.boolean().default(false), // if mnt symlink exists
 });
