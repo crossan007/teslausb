@@ -120,9 +120,13 @@ source "$THISDIR/envsetup.sh"
 
 # Configure SSH access as early as possible so key-based root login is available
 # even if later setup stages fail (e.g. due to low disk space).
-copy_script setup/pi/configure-ssh.sh /tmp
-/tmp/configure-ssh.sh
-setup_progress "Early SSH configuration applied"
+if [ "${TESLAUSB_EARLY_SSH_APPLIED:-0}" != "1" ]
+then
+  copy_script setup/pi/configure-ssh.sh /tmp
+  /tmp/configure-ssh.sh
+  setup_progress "Early SSH configuration applied"
+  export TESLAUSB_EARLY_SSH_APPLIED=1
+fi
 
 function dehumanize () {
   local value
@@ -344,6 +348,7 @@ function create_usb_drive_backing_files () {
   update_backingfiles_fstab_entry $BACKINGFILES_MOUNTPOINT/music_disk.bin /mnt/music
   update_backingfiles_fstab_entry $BACKINGFILES_MOUNTPOINT/lightshow_disk.bin /mnt/lightshow
   update_backingfiles_fstab_entry $BACKINGFILES_MOUNTPOINT/boombox_disk.bin /mnt/boombox
+  systemctl daemon-reload || true
 
   # mount cam image and make sure the right directories exist
   umount /mnt/cam > /dev/null || true
@@ -697,6 +702,7 @@ function cmd_expand_root {
   # Remove mount entries before deleting partitions so next boot doesn't fail.
   sed -i '/LABEL=backingfiles/d' /etc/fstab
   sed -i '/LABEL=mutable/d' /etc/fstab
+  systemctl daemon-reload || true
 
   # Delete higher-numbered partition first.
   if [ -n "$mutable_num" ] && [ -n "$backing_num" ] && [ "$mutable_num" -lt "$backing_num" ]
