@@ -231,7 +231,7 @@ export class RsyncBackend implements ArchiveBackend {
       return;
     }
 
-    const progressMatch = trimmed.match(/^([\d,]+)\s+(\d+)%\s+([^\s]+)\s+([^\s]+)(?:\s+\(xfr#(\d+),\s*to-chk=(\d+)\/(\d+)\))?$/);
+    const progressMatch = trimmed.match(/^([\d,]+)\s+(\d+)%\s+([^\s]+)\s+([^\s]+)(?:\s+\((?:xfr#(\d+),\s*)?(?:to|ir)-chk=(\d+)\/(\d+)\))?$/);
     if (progressMatch) {
       const [, transferred, percent, rate, eta, xfrCount] = progressMatch;
       const parsedPercent = Number(percent);

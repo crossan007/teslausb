@@ -108,6 +108,52 @@ describe('RsyncBackend', () => {
     expect(sessions.some((session) => session.currentFilePath === 'SavedClips/a.mp4')).toBe(true);
   });
 
+  it('parses progress lines that use ir-chk and updates transfer progress before completion', async () => {
+    const sourceRoot = await mkdtemp(join(tmpdir(), 'teslausb-rsync-irchk-'));
+    const relPath = 'RecentClips/large.mp4';
+    const sourcePath = join(sourceRoot, relPath);
+
+    await mkdir(join(sourceRoot, 'RecentClips'), { recursive: true });
+    await writeFile(sourcePath, 'x'.repeat(100));
+
+    const runner = new MockCommandRunner();
+    runner.setResult('rsync', { code: 0, stdout: '', stderr: '' });
+    runner.setStreamLines('rsync', {
+      stdout: [
+        relPath,
+        '10 10% 1.00MB/s 0:00:09 (xfr#0, ir-chk=1/2)',
+        '50 50% 1.00MB/s 0:00:05 (xfr#0, ir-chk=1/2)',
+      ],
+    });
+
+    const backend = new RsyncBackend(
+      { rsyncServer: 'host', rsyncUser: 'user', rsyncPath: '/archive' },
+      runner,
+      { tempRootDir: '/tmp' },
+    );
+
+    const sessions: TransferSession[] = [];
+    const transfer = backend.archiveClips(sourceRoot, [relPath]);
+    const subscription = transfer.session$.subscribe((session: TransferSession) => {
+      sessions.push(session);
+    });
+
+    try {
+      await transfer.result;
+
+      const sawIntermediateProgress = sessions.some((session) =>
+        session.phase === 'transferring'
+        && (session.batchPercent ?? 0) >= 50
+        && (session.files[0]?.percent ?? 0) >= 50,
+      );
+
+      expect(sawIntermediateProgress).toBe(true);
+    } finally {
+      subscription.unsubscribe();
+      await rm(sourceRoot, { recursive: true, force: true });
+    }
+  });
+
   it('treats rsync exit code 24 as success', async () => {
     const runner = new MockCommandRunner();
     runner.setResult('rsync', { code: 24, stdout: '', stderr: '' });
