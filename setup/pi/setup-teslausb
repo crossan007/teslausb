@@ -854,6 +854,10 @@ function cmd_update_web_apply {
     cp "$SOURCE_DIR/tsconfig.json" "$app_dir/"
   fi
 
+  setup_progress "update_web: deploying updated run/ scripts to /root/bin"
+  find "$SOURCE_DIR/run" -maxdepth 1 -type f -exec cp {} /root/bin/ \;
+  chmod +x /root/bin/* 2>/dev/null || true
+
   pushd "$app_dir" > /dev/null
 
   setup_progress "update_web: patching package for CommonJS runtime"
