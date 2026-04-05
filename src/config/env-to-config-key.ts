@@ -55,6 +55,11 @@ export const ENV_TO_CONFIG_KEY: Record<string, string> = {
   TIME_ZONE: 'timeZone',
   NOTIFICATION_TITLE: 'notificationTitle',
   TESLAUSB_HOSTNAME: 'teslaUSBHostname',
+  PUBLIC_API_BASE_URL: 'publicApiBaseUrl',
+  PUBLIC_WS_URL: 'publicWsUrl',
+  UI_CORS_ORIGINS: 'uiCorsOrigins',
+  SYSTEM_STATUS_DEFAULT_GATEWAY: 'systemStatusDefaultGateway',
+  SYSTEM_STATUS_PING_PACKET_SIZE: 'systemStatusPingPacketSize',
   UPGRADE_PACKAGES: 'upgradePackages',
   INCREASE_ROOT_SIZE: 'increaseRootSize',
 };

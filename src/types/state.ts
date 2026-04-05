@@ -84,6 +84,8 @@ export const SystemStatusSchema = z.object({
   wifiFreqGHz: z.number().optional(),
   wifiSignalStrength: z.number().optional(), // 0-100
   wifiIp: z.string().optional(),
+  pingTimeMs: z.number().optional(), // milliseconds to default gateway
+  packetLoss: z.number().optional(), // percentage
 });
 
 export type SystemStatus = z.infer<typeof SystemStatusSchema>;

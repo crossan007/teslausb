@@ -77,6 +77,13 @@ export const ConfigSchema = z.object({
   notificationTitle: z.string().default('TeslaUSB'),
   teslaUSBHostname: z.string().default('teslausb'),
 
+  // Web UI & API
+  publicApiBaseUrl: z.string().optional(),
+  publicWsUrl: z.string().optional(),
+  uiCorsOrigins: z.string().default('*'),
+  systemStatusDefaultGateway: z.string().default('192.168.1.1'),
+  systemStatusPingPacketSize: z.number().default(1024),
+
   // Maintenance
   upgradePackages: z.boolean().default(false),
   increaseRootSize: z.string().default('0'),
