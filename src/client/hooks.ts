@@ -47,7 +47,7 @@ export function useApi<T>(
       const interval = setInterval(fetch, options.interval);
       return () => clearInterval(interval);
     }
-  }, [fetch, options.interval]);
+  }, [fetch, options.interval, options.enabled]);
 
   return { data, loading, error };
 }
