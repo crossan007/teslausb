@@ -140,7 +140,7 @@ export class ClipDiscoveryManager {
 
       const baseRelativePath = category.directory;
       const absolutePath = posixPath.join(options.rootPath, baseRelativePath);
-      const paths = await this.walkSymlinks(absolutePath, baseRelativePath, options.includePredicate);
+      const paths = await this.walkClipEntries(absolutePath, baseRelativePath, options.includePredicate);
       for (const relPath of paths) {
         discovered.add(relPath);
       }
@@ -149,7 +149,7 @@ export class ClipDiscoveryManager {
     return Array.from(discovered).sort();
   }
 
-  private async walkSymlinks(
+  private async walkClipEntries(
     absoluteBasePath: string,
     baseRelativePath: string,
     includePredicate?: (relativePath: string) => boolean,
@@ -173,7 +173,7 @@ export class ClipDiscoveryManager {
           continue;
         }
 
-        if (!entry.isSymbolicLink()) {
+        if (!entry.isSymbolicLink() && !entry.isFile()) {
           continue;
         }
 

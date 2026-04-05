@@ -28,6 +28,28 @@ afterEach(async () => {
 });
 
 describe('ClipDiscoveryManager', () => {
+  it('discovers regular clip files in category folders', async () => {
+    const workspace = await createWorkspace();
+    const rootPath = join(workspace, 'TeslaCam');
+    const archivedListPath = join(workspace, 'mutable', 'sentry_files_archived');
+
+    await createFileWithSize(join(rootPath, 'SavedClips', 'evt1', 'host-dropped.mp4'), 140_000);
+
+    const manager = new ClipDiscoveryManager();
+    const result = await manager.discoverPending({
+      rootPath,
+      archivedListPath,
+      includeSavedclips: true,
+      includeSentryclips: true,
+      includeTrackmodeclips: true,
+      includeRecentclips: false,
+      minClipSizeBytes: 100_000,
+    });
+
+    expect(result.filePaths).toEqual(['SavedClips/evt1/host-dropped.mp4']);
+    expect(result.pendingClips.totalFiles).toBe(1);
+  });
+
   it('discovers pending clips, prunes archived, and skips short mp4 clips', async () => {
     const workspace = await createWorkspace();
     const rootPath = join(workspace, 'TeslaCam');
