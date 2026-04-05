@@ -80,7 +80,7 @@ export class SnapshotDiscoveryConsumer {
   }
 
   private async processRoot(rootPath: string): Promise<void> {
-      logger.info({ rootPath }, 'Discovery scan starting for snapshot root');
+    logger.info({ rootPath }, 'Discovery scan starting for snapshot root');
     try {
       const result = await this.discoveryManager.discoverPending({
         ...this.buildDiscoveryOptions(rootPath),
@@ -105,7 +105,23 @@ export class SnapshotDiscoveryConsumer {
         const emitOnChangeOnly = this.options.emitOnChangeOnly ?? true;
         if (!emitOnChangeOnly || fingerprint !== this.lastEmittedFingerprint) {
           this.lastEmittedFingerprint = fingerprint;
+          logger.info(
+            {
+              rootPath: result.rootPath,
+              totalFiles: filePaths.length,
+              filePaths,
+            },
+            'Discovered files from snapshot',
+          );
           this.eventsSubject.next(result);
+        } else {
+          logger.debug(
+            {
+              rootPath: result.rootPath,
+              totalFiles: filePaths.length,
+            },
+            'Snapshot discovery unchanged; suppressing duplicate emission',
+          );
         }
       } else {
         this.lastEmittedFingerprint = '';

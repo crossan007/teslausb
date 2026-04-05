@@ -2,10 +2,12 @@
  * Legacy lineage:
  * - run/archiveloop (archive lifecycle loop: verify/reachability/connect/archive/disconnect)
  */
-import { ArchiveBackend, DefaultSyncStatus, OperationResult, SyncStatus, TransferSession } from '../types';
+import { ArchiveBackend, DefaultSyncStatus, OperationResult, SyncStatus, TransferFileProgress, TransferSession } from '../types';
 import { logger } from '../core/logger';
 import { SnapshotDecision, SnapshotManager } from './snapshot-manager';
 import { FreeSpaceDecision, FreeSpaceManager } from './free-space-manager';
+
+const DEFAULT_PROGRESS_LOG_INCREMENT_PERCENT = 25;
 
 export interface SyncCycleInput {
   fromPath: string;
@@ -37,16 +39,25 @@ export interface StateSink {
   writeTransferSession?(session: TransferSession): void;
 }
 
+export interface ClipArchiveCoordinatorOptions {
+  progressLogIncrementPercent?: number;
+}
+
 /**
  * Coordinates one archive transfer cycle for discovered clip files.
  */
 export class ClipArchiveCoordinator {
+  private readonly progressLogIncrementPercent: number;
+
   constructor(
     private readonly backend: ArchiveBackend,
     private readonly snapshotManager: SnapshotManager = new SnapshotManager(),
     private readonly freeSpaceManager: FreeSpaceManager = new FreeSpaceManager(),
     private readonly stateSink?: StateSink,
-  ) {}
+    options: ClipArchiveCoordinatorOptions = {},
+  ) {
+    this.progressLogIncrementPercent = this.normalizeProgressIncrement(options.progressLogIncrementPercent);
+  }
 
   async runArchiveCycle(input: SyncCycleInput): Promise<SyncCycleResult> {
     const startedAt = Date.now();
@@ -83,8 +94,10 @@ export class ClipArchiveCoordinator {
       await this.backend.connect();
 
       const transfer = this.backend.archiveClips(input.fromPath, input.files);
+      const transferLogger = this.createTransferLogger();
       const subscription = transfer.session$.subscribe((session: TransferSession) => {
         this.stateSink?.writeTransferSession?.(session);
+        transferLogger(session);
       });
 
       try {
@@ -151,5 +164,133 @@ export class ClipArchiveCoordinator {
 
   private writeStatus(status: SyncStatus): void {
     this.stateSink?.writeSyncStatus(status);
+  }
+
+  private createTransferLogger(): (session: TransferSession) => void {
+    const startedFiles = new Set<string>();
+    const completedFiles = new Set<string>();
+    const failedFiles = new Set<string>();
+    const loggedPercentByFile = new Map<string, number>();
+
+    return (session: TransferSession): void => {
+      for (const file of session.files) {
+        this.logFileTransferStarted(file, session, startedFiles);
+        this.logFileTransferProgress(file, session, loggedPercentByFile);
+        this.logFileTransferCompleted(file, session, completedFiles);
+        this.logFileTransferFailed(file, session, failedFiles);
+      }
+    };
+  }
+
+  private logFileTransferStarted(
+    file: TransferFileProgress,
+    session: TransferSession,
+    startedFiles: Set<string>,
+  ): void {
+    if (file.status !== 'transferring' || startedFiles.has(file.path)) {
+      return;
+    }
+
+    startedFiles.add(file.path);
+    logger.info(
+      {
+        sessionId: session.sessionId,
+        backend: session.backend,
+        filePath: file.path,
+      },
+      'File transfer started',
+    );
+  }
+
+  private logFileTransferProgress(
+    file: TransferFileProgress,
+    session: TransferSession,
+    loggedPercentByFile: Map<string, number>,
+  ): void {
+    if (file.status !== 'transferring' && file.status !== 'completed') {
+      return;
+    }
+
+    const currentPercent = Math.floor(file.percent ?? 0);
+    if (currentPercent <= 0) {
+      return;
+    }
+
+    const milestone = Math.min(
+      100,
+      Math.floor(currentPercent / this.progressLogIncrementPercent) * this.progressLogIncrementPercent,
+    );
+    if (milestone <= 0) {
+      return;
+    }
+
+    const lastLogged = loggedPercentByFile.get(file.path) ?? 0;
+    if (milestone <= lastLogged) {
+      return;
+    }
+
+    loggedPercentByFile.set(file.path, milestone);
+    logger.info(
+      {
+        sessionId: session.sessionId,
+        backend: session.backend,
+        filePath: file.path,
+        percent: milestone,
+        bytesTransferred: file.bytesTransferred,
+        speedBytesPerSec: file.speedBytesPerSec,
+        etaSeconds: file.etaSeconds,
+      },
+      'File transfer progress',
+    );
+  }
+
+  private logFileTransferCompleted(
+    file: TransferFileProgress,
+    session: TransferSession,
+    completedFiles: Set<string>,
+  ): void {
+    if (file.status !== 'completed' || completedFiles.has(file.path)) {
+      return;
+    }
+
+    completedFiles.add(file.path);
+    logger.info(
+      {
+        sessionId: session.sessionId,
+        backend: session.backend,
+        filePath: file.path,
+        bytesTransferred: file.bytesTransferred,
+      },
+      'File transfer completed',
+    );
+  }
+
+  private logFileTransferFailed(
+    file: TransferFileProgress,
+    session: TransferSession,
+    failedFiles: Set<string>,
+  ): void {
+    if (file.status !== 'failed' || failedFiles.has(file.path)) {
+      return;
+    }
+
+    failedFiles.add(file.path);
+    logger.warn(
+      {
+        sessionId: session.sessionId,
+        backend: session.backend,
+        filePath: file.path,
+        error: file.error,
+      },
+      'File transfer failed',
+    );
+  }
+
+  private normalizeProgressIncrement(value?: number): number {
+    const normalized = Math.floor(value ?? DEFAULT_PROGRESS_LOG_INCREMENT_PERCENT);
+    if (!Number.isFinite(normalized) || normalized <= 0) {
+      return DEFAULT_PROGRESS_LOG_INCREMENT_PERCENT;
+    }
+    return normalized;
   }
 }
