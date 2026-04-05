@@ -166,12 +166,19 @@ export class RuntimeLifecycleLoop {
         discoveryResult.filePaths,
       );
 
-      if (archivedNow.length > 0) {
-        await this.discoveryManager.markArchived(archivedNow, this.options.archivedListPath);
+      if (cycleSucceeded) {
+        archivedMarkedCount = archivedNow.length;
+        if (archivedNow.length > 0) {
+          await this.discoveryManager.markArchived(archivedNow, this.options.archivedListPath);
+        }
+      } else {
+        this.runtimeLogger.info(
+          { filePaths: discoveryResult.filePaths.length },
+          'Archive cycle did not succeed – skipping markArchived so files remain pending',
+        );
       }
-      archivedMarkedCount = archivedNow.length;
 
-      this.runtimeLogger.info({ archivedMarked: archivedNow.length, result: cycleResult }, 'Archive cycle completed from lifecycle loop');
+      this.runtimeLogger.info({ archivedMarked: archivedMarkedCount, cycleSucceeded, result: cycleResult }, 'Archive cycle completed from lifecycle loop');
     } finally {
       await this.eventBus.publish({
         type: 'archive-finish',

@@ -41,8 +41,10 @@ export class SnapshotDiscoveryConsumer {
       if (event.type !== 'snapshot-ready') {
         return;
       }
+      logger.debug({ scanRootPath: event.scanRootPath }, 'snapshot-ready received by discovery consumer');
       await this.consume(event.scanRootPath);
     });
+    logger.debug('SnapshotDiscoveryConsumer started');
   }
 
   stop(): void {
@@ -78,12 +80,24 @@ export class SnapshotDiscoveryConsumer {
   }
 
   private async processRoot(rootPath: string): Promise<void> {
+      logger.info({ rootPath }, 'Discovery scan starting for snapshot root');
     try {
       const result = await this.discoveryManager.discoverPending({
         ...this.buildDiscoveryOptions(rootPath),
         rootPath,
       });
       this.options.persistPendingClips?.(result.pendingClips);
+      logger.info(
+        {
+          rootPath,
+          candidatesDiscovered: result.candidatesDiscovered,
+          candidatesFiltered: result.candidatesFiltered,
+          filePaths: result.filePaths.length,
+          previouslyArchivedRetained: result.previouslyArchivedRetained,
+        },
+        'Discovery scan complete',
+      );
+
 
       const filePaths = result.filePaths;
       if (filePaths.length > 0) {
