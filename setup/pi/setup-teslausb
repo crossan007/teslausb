@@ -254,9 +254,8 @@ function get_common_scripts () {
 # to the kernel log, and 'lsusb' might hang for over a minute or until
 # a gadget is created.
 # To work around this, make sure the g_ether module is loaded along
-# with dwc2. The archiveloop script will then unload the g_ether
-# module (the attached host will see no device at all at this point)
-# before creating the mass storage gadget.
+# with dwc2. The orchestrator now unloads g_ether before creating the
+# configfs mass-storage gadget.
 function fix_cmdline_txt_modules_load () {
   if [ ! -f "$CMDLINE_PATH" ]
   then
@@ -266,7 +265,7 @@ function fix_cmdline_txt_modules_load () {
   # Extract the modules-load portion of the command line.
   # Note that this not handle spaces in the argument.
   local curparam
-  curparam=$(grep -P -o " modules.load=[^\s\$]*" "$CMDLINE_PATH" || true)
+  curparam=$(grep -P -o " modules-load=[^\s\$]*" "$CMDLINE_PATH" || true)
   if [[ "$curparam" == "" ]]
   then
     curparam="\$"

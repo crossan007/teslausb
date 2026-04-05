@@ -16,6 +16,7 @@ export interface GadgetManagerPaths {
   modelPath: string;
   configfsMountsPath: string;
   udcClassPath: string;
+  procModulesPath: string;
 }
 
 export interface GadgetManagerOptions {
@@ -30,6 +31,7 @@ const DEFAULT_PATHS: GadgetManagerPaths = {
   modelPath: '/sys/firmware/devicetree/base/model',
   configfsMountsPath: '/proc/mounts',
   udcClassPath: '/sys/class/udc',
+  procModulesPath: '/proc/modules',
 };
 
 export class GadgetManager {
@@ -54,6 +56,8 @@ export class GadgetManager {
       logger.debug({ gadgetRoot }, 'USB gadget already prepared');
       return;
     }
+
+    await this.unloadLegacyGEtherIfPresent();
 
     await this.runCommand('modprobe', ['libcomposite']);
 
@@ -128,6 +132,16 @@ export class GadgetManager {
       return;
     }
     throw new Error(`${command} exited with ${result.code}: ${(result.stderr || result.stdout).trim()}`);
+  }
+
+  private async unloadLegacyGEtherIfPresent(): Promise<void> {
+    const modules = await readFile(this.paths.procModulesPath, 'utf-8').catch(() => '');
+    if (!modules.match(/^g_ether\s/m)) {
+      return;
+    }
+
+    logger.warn('Detected legacy g_ether module loaded; unloading before configfs gadget setup');
+    await this.runCommand('modprobe', ['-r', 'g_ether']);
   }
 
   private async resolveConfigfsRoot(): Promise<string> {

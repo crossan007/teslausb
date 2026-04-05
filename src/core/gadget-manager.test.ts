@@ -162,4 +162,46 @@ describe('GadgetManager', () => {
     await manager.enable();
     expect(runner.calls).toHaveLength(0);
   });
+
+  it('unloads legacy g_ether before creating configfs gadget', async () => {
+    const root = await createTempRoot();
+    const configfsRoot = join(root, 'configfs');
+    const backingFilesDir = join(root, 'backingfiles');
+    const machineIdPath = join(root, 'etc', 'machine-id');
+    const modelPath = join(root, 'sys', 'model');
+    const mountsPath = join(root, 'proc', 'mounts');
+    const modulesPath = join(root, 'proc', 'modules');
+    const udcClassPath = join(root, 'sys', 'class', 'udc');
+
+    await mkdir(configfsRoot, { recursive: true });
+    await mkdir(backingFilesDir, { recursive: true });
+    await mkdir(dirname(machineIdPath), { recursive: true });
+    await mkdir(dirname(modelPath), { recursive: true });
+    await mkdir(dirname(mountsPath), { recursive: true });
+    await mkdir(join(udcClassPath, 'dummy.udc.0'), { recursive: true });
+
+    await writeFile(machineIdPath, 'test-machine-id\n', 'utf-8');
+    await writeFile(modelPath, 'Raspberry Pi 4\n', 'utf-8');
+    await writeFile(mountsPath, `none ${configfsRoot} configfs rw 0 0\n`, 'utf-8');
+    await writeFile(modulesPath, 'g_ether 24576 0 - Live 0x00000000\n', 'utf-8');
+    await writeFile(join(backingFilesDir, 'cam_disk.bin'), '');
+
+    const runner = new MockCommandRunner();
+    const manager = new GadgetManager({
+      commandRunner: runner,
+      paths: {
+        backingFilesDir,
+        machineIdPath,
+        modelPath,
+        configfsMountsPath: mountsPath,
+        procModulesPath: modulesPath,
+        udcClassPath,
+      },
+    });
+
+    await manager.enable();
+
+    expect(runner.calls[0]).toEqual({ command: 'modprobe', args: ['-r', 'g_ether'] });
+    expect(runner.calls[1]).toEqual({ command: 'modprobe', args: ['libcomposite'] });
+  });
 });
