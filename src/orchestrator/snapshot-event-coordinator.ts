@@ -78,17 +78,20 @@ export class SnapshotEventCoordinator {
 
     try {
       const mounted = await this.snapshotManager.createMountedSnapshot();
+      const scanRootPath = await this.snapshotManager.resolveDiscoveryRoot(mounted);
       await this.eventBus.publish({
         type: 'snapshot-ready',
         occurredAtMs: this.nowMsProvider(),
         snapshotId: mounted.id,
         snapshotFilePath: mounted.filePath,
         snapshotMountPath: mounted.mountPath,
+        scanRootPath,
       });
       logger.info({
         snapshotId: mounted.id,
         imagePath: change.imagePath,
         imageMtimeMs: change.imageMtimeMs,
+        scanRootPath,
       }, 'Snapshot created and mounted from backing image change');
     } catch (error) {
       logger.warn({ error, imagePath: change.imagePath }, 'Failed to create mounted snapshot from backing image change');

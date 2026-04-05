@@ -7,6 +7,7 @@ import { constants } from 'fs';
 import { copyFile, mkdir, readdir, readlink, rm, stat, unlink } from 'fs/promises';
 import { join } from 'path';
 import { logger, stateManager } from '../core';
+import { pathExists } from '../shared';
 import { CommandRunner, defaultCommandRunner } from '../shared/command-runner';
 import { Snapshot } from '../types';
 
@@ -119,6 +120,24 @@ export class SnapshotManager {
   async createMountedSnapshot(): Promise<Snapshot> {
     const snapshot = await this.createSnapshot();
     return this.mountSnapshot(snapshot);
+  }
+
+  async resolveDiscoveryRoot(snapshotOrId: Snapshot | string): Promise<string> {
+    const snapshotId = typeof snapshotOrId === 'string' ? snapshotOrId : snapshotOrId.id;
+    const mountPath = this.buildMountPath(snapshotId);
+
+    if (await pathExists(join(mountPath, 'SavedClips'))
+      || await pathExists(join(mountPath, 'SentryClips'))
+      || await pathExists(join(mountPath, 'TeslaTrackMode'))
+      || await pathExists(join(mountPath, 'RecentClips'))) {
+      return mountPath;
+    }
+
+    if (await pathExists(join(mountPath, 'TeslaCam'))) {
+      return join(mountPath, 'TeslaCam');
+    }
+
+    return mountPath;
   }
 
   async releaseSnapshot(snapshotId: string): Promise<void> {

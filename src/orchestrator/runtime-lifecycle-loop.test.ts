@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { PendingClips, SyncStatus } from '../types';
 import { CommandResult, CommandRunner } from '../shared/command-runner';
 import { RuntimeLifecycleLoop } from './runtime-lifecycle-loop';
-import { ClipDiscoveryLoop } from './clip-discovery-loop';
 import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend } from '../types/archive';
@@ -133,12 +132,11 @@ describe('RuntimeLifecycleLoop', () => {
     const triggerEvents: ArchiveEvent[] = [];
 
     const loop = new RuntimeLifecycleLoop(
-      discoveryLoop as unknown as ClipDiscoveryLoop,
+      discoveryLoop,
       manager as unknown as ClipDiscoveryManager,
       orchestrator as unknown as ClipArchiveCoordinator,
       backend,
       {
-        clipDiscoveryRoot: '/mutable/TeslaCam',
         archivedListPath: '/mutable/sentry_files_archived',
         archiveDelaySec: 0,
         reachabilityPollMs: 1,
@@ -166,8 +164,8 @@ describe('RuntimeLifecycleLoop', () => {
 
     loop.start();
     discoveryLoop.subject.next({
-      rootPath: '/backingfiles/snapshots/snap-000001/mnt',
-      filePaths: ['TeslaCam/SavedClips/evt1/file.mp4'],
+      rootPath: '/backingfiles/snapshots/snap-000001/mnt/TeslaCam',
+      filePaths: ['SavedClips/evt1/file.mp4'],
       pendingClips: pending(),
       candidatesDiscovered: 1,
       candidatesFiltered: 0,
@@ -177,7 +175,7 @@ describe('RuntimeLifecycleLoop', () => {
     await waitForCondition(() => orchestrator.calls === 1, 1000);
 
     expect(orchestrator.calls).toBe(1);
-    expect(manager.marked).toEqual(['TeslaCam/SavedClips/evt1/file.mp4']);
+    expect(manager.marked).toEqual(['SavedClips/evt1/file.mp4']);
     expect(triggerEvents.map((event) => event.type)).toEqual(['archive-start', 'archive-finish']);
     expect(syncStatusWrites.length).toBeGreaterThan(0);
 
@@ -193,12 +191,11 @@ describe('RuntimeLifecycleLoop', () => {
     const syncStatusWrites: SyncStatus[] = [];
 
     const loop = new RuntimeLifecycleLoop(
-      discoveryLoop as unknown as ClipDiscoveryLoop,
+      discoveryLoop,
       manager as unknown as ClipDiscoveryManager,
       orchestrator as unknown as ClipArchiveCoordinator,
       backend,
       {
-        clipDiscoveryRoot: '/mutable/TeslaCam',
         archivedListPath: '/mutable/sentry_files_archived',
         archiveDelaySec: 0,
         reachabilityPollMs: 1,
@@ -221,8 +218,8 @@ describe('RuntimeLifecycleLoop', () => {
 
     loop.start();
     discoveryLoop.subject.next({
-      rootPath: '/backingfiles/snapshots/snap-000001/mnt',
-      filePaths: ['TeslaCam/SavedClips/evt1/file.mp4'],
+      rootPath: '/backingfiles/snapshots/snap-000001/mnt/TeslaCam',
+      filePaths: ['SavedClips/evt1/file.mp4'],
       pendingClips: pending(),
       candidatesDiscovered: 1,
       candidatesFiltered: 0,

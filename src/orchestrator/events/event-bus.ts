@@ -47,8 +47,10 @@ export interface SnapshotReadyEvent extends EventBase {
   snapshotId: string;
   /** Snapshot image file path. */
   snapshotFilePath: string;
-  /** Mounted root path to search/archive from. */
+  /** Mounted snapshot root path. */
   snapshotMountPath: string;
+  /** Path inside the mounted snapshot that discovery should scan. */
+  scanRootPath: string;
 }
 
 /**

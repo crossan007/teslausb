@@ -30,10 +30,10 @@ afterEach(async () => {
 describe('ClipDiscoveryManager', () => {
   it('discovers regular clip files in category folders', async () => {
     const workspace = await createWorkspace();
-    const rootPath = join(workspace, 'mounted');
+    const rootPath = join(workspace, 'TeslaCam');
     const archivedListPath = join(workspace, 'mutable', 'sentry_files_archived');
 
-    await createFileWithSize(join(rootPath, 'TeslaCam', 'SavedClips', 'evt1', 'host-dropped.mp4'), 140_000);
+    await createFileWithSize(join(rootPath, 'SavedClips', 'evt1', 'host-dropped.mp4'), 140_000);
 
     const manager = new ClipDiscoveryManager();
     const result = await manager.discoverPending({
@@ -46,13 +46,13 @@ describe('ClipDiscoveryManager', () => {
       minClipSizeBytes: 100_000,
     });
 
-    expect(result.filePaths).toEqual(['TeslaCam/SavedClips/evt1/host-dropped.mp4']);
+    expect(result.filePaths).toEqual(['SavedClips/evt1/host-dropped.mp4']);
     expect(result.pendingClips.totalFiles).toBe(1);
   });
 
   it('discovers pending clips, prunes archived, and skips short mp4 clips', async () => {
     const workspace = await createWorkspace();
-    const rootPath = join(workspace, 'mounted');
+    const rootPath = join(workspace, 'TeslaCam');
     const targets = join(workspace, 'targets');
     const archivedListPath = join(workspace, 'mutable', 'sentry_files_archived');
 
@@ -61,15 +61,15 @@ describe('ClipDiscoveryManager', () => {
     await createFileWithSize(join(targets, 'sentry-big.mp4'), 150_000);
     await createFileWithSize(join(targets, 'track.csv'), 1_000);
 
-    await createClipSymlink(rootPath, 'TeslaCam/SavedClips/evt1/saved-big.mp4', join(targets, 'saved-big.mp4'));
-    await createClipSymlink(rootPath, 'TeslaCam/SavedClips/evt1/saved-small.mp4', join(targets, 'saved-small.mp4'));
-    await createClipSymlink(rootPath, 'TeslaCam/SentryClips/evt2/sentry-big.mp4', join(targets, 'sentry-big.mp4'));
+    await createClipSymlink(rootPath, 'SavedClips/evt1/saved-big.mp4', join(targets, 'saved-big.mp4'));
+    await createClipSymlink(rootPath, 'SavedClips/evt1/saved-small.mp4', join(targets, 'saved-small.mp4'));
+    await createClipSymlink(rootPath, 'SentryClips/evt2/sentry-big.mp4', join(targets, 'sentry-big.mp4'));
     await createClipSymlink(rootPath, 'TeslaTrackMode/lap1.csv', join(targets, 'track.csv'));
 
     await mkdir(join(archivedListPath, '..'), { recursive: true });
     await writeFile(
       archivedListPath,
-      ['TeslaCam/SavedClips/evt1/saved-big.mp4', 'TeslaCam/SavedClips/evt-old/deleted.mp4'].join('\n') + '\n',
+      ['SavedClips/evt1/saved-big.mp4', 'SavedClips/evt-old/deleted.mp4'].join('\n') + '\n',
       'utf-8',
     );
 
@@ -86,7 +86,7 @@ describe('ClipDiscoveryManager', () => {
     });
 
     expect(result.filePaths).toEqual([
-      'TeslaCam/SentryClips/evt2/sentry-big.mp4',
+      'SentryClips/evt2/sentry-big.mp4',
       'TeslaTrackMode/lap1.csv',
     ]);
     expect(result.pendingClips.totalFiles).toBe(2);
@@ -95,20 +95,20 @@ describe('ClipDiscoveryManager', () => {
     expect(result.candidatesFiltered).toBe(1);
 
     const archivedListContent = await readFile(archivedListPath, 'utf-8');
-    expect(archivedListContent.trim()).toBe('TeslaCam/SavedClips/evt1/saved-big.mp4');
+    expect(archivedListContent.trim()).toBe('SavedClips/evt1/saved-big.mp4');
   });
 
   it('supports category toggles and custom include predicate', async () => {
     const workspace = await createWorkspace();
-    const rootPath = join(workspace, 'mounted');
+    const rootPath = join(workspace, 'TeslaCam');
     const targets = join(workspace, 'targets');
     const archivedListPath = join(workspace, 'mutable', 'sentry_files_archived');
 
     await createFileWithSize(join(targets, 'saved.mp4'), 130_000);
     await createFileWithSize(join(targets, 'sentry.mp4'), 130_000);
 
-    await createClipSymlink(rootPath, 'TeslaCam/SavedClips/evt1/saved.mp4', join(targets, 'saved.mp4'));
-    await createClipSymlink(rootPath, 'TeslaCam/SentryClips/evt1/sentry.mp4', join(targets, 'sentry.mp4'));
+    await createClipSymlink(rootPath, 'SavedClips/evt1/saved.mp4', join(targets, 'saved.mp4'));
+    await createClipSymlink(rootPath, 'SentryClips/evt1/sentry.mp4', join(targets, 'sentry.mp4'));
 
     const manager = new ClipDiscoveryManager();
     const result = await manager.discoverPending({
@@ -121,7 +121,7 @@ describe('ClipDiscoveryManager', () => {
       includePredicate: (path) => path.endsWith('sentry.mp4'),
     });
 
-    expect(result.filePaths).toEqual(['TeslaCam/SentryClips/evt1/sentry.mp4']);
+    expect(result.filePaths).toEqual(['SentryClips/evt1/sentry.mp4']);
   });
 
   it('marks archived files with deduplicated sorted output', async () => {
@@ -148,25 +148,25 @@ describe('ClipDiscoveryManager', () => {
 
   it('resolves archived files only when no longer symlink-backed', async () => {
     const workspace = await createWorkspace();
-    const rootPath = join(workspace, 'mounted');
+    const rootPath = join(workspace, 'TeslaCam');
     const targets = join(workspace, 'targets');
 
     await createFileWithSize(join(targets, 'kept.mp4'), 130_000);
-    await createClipSymlink(rootPath, 'TeslaCam/SavedClips/evt1/kept.mp4', join(targets, 'kept.mp4'));
+    await createClipSymlink(rootPath, 'SavedClips/evt1/kept.mp4', join(targets, 'kept.mp4'));
 
-    await mkdir(join(rootPath, 'TeslaCam', 'SavedClips', 'evt1'), { recursive: true });
-    await writeFile(join(rootPath, 'TeslaCam', 'SavedClips', 'evt1', 'materialized.mp4'), Buffer.alloc(130_000));
+    await mkdir(join(rootPath, 'SavedClips', 'evt1'), { recursive: true });
+    await writeFile(join(rootPath, 'SavedClips', 'evt1', 'materialized.mp4'), Buffer.alloc(130_000));
 
     const manager = new ClipDiscoveryManager();
     const archived = await manager.resolveArchivedFromSource(rootPath, [
-      'TeslaCam/SavedClips/evt1/kept.mp4',
-      'TeslaCam/SavedClips/evt1/materialized.mp4',
-      'TeslaCam/SavedClips/evt1/missing.mp4',
+      'SavedClips/evt1/kept.mp4',
+      'SavedClips/evt1/materialized.mp4',
+      'SavedClips/evt1/missing.mp4',
     ]);
 
     expect(archived).toEqual([
-      'TeslaCam/SavedClips/evt1/materialized.mp4',
-      'TeslaCam/SavedClips/evt1/missing.mp4',
+      'SavedClips/evt1/materialized.mp4',
+      'SavedClips/evt1/missing.mp4',
     ]);
   });
 });

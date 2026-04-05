@@ -6,18 +6,24 @@ import { concatMap, Observable, Subscription } from 'rxjs';
 import { logger, stateManager } from '../core';
 import { CommandRunner, defaultCommandRunner } from '../shared/command-runner';
 import { DefaultSyncStatus, PendingClips, SyncStatus } from '../types';
-import { ClipDiscoveryLoop } from './clip-discovery-loop';
 import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend } from '../types/archive';
 import { ArchiveEventBus, ArchiveEventBusLike } from './events';
 
 /**
+ * Structural contract expected from any discovery source (snapshot consumer, test fake, etc.).
+ */
+export interface DiscoverySource {
+  readonly discovered$: Observable<ClipDiscoveryResult>;
+  start(): void;
+  stop(): void;
+}
+
+/**
  * Controls polling cadence and lifecycle hook behavior around archive cycles.
  */
 export interface RuntimeLifecycleLoopOptions {
-  /** Clip root path used by discovery and archive backends. */
-  clipDiscoveryRoot: string;
   /** Path to persisted archived file list. */
   archivedListPath: string;
   /** Delay before each archive attempt once backend is reachable. */
@@ -69,7 +75,7 @@ export class RuntimeLifecycleLoop {
    * Builds a runtime lifecycle loop instance.
    */
   constructor(
-    private readonly discoveryLoop: ClipDiscoveryLoop,
+    private readonly discoveryLoop: DiscoverySource,
     private readonly discoveryManager: ClipDiscoveryManager,
     private readonly clipArchiveCoordinator: ClipArchiveCoordinator,
     private readonly backend: ArchiveBackend,

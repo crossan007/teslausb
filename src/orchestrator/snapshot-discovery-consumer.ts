@@ -1,6 +1,5 @@
 /**
- * Legacy lineage:
- * - run/archiveloop (continuous loop that waits and re-checks for archive work)
+ * Consumes immutable snapshot-ready events and emits one discovery result per snapshot scan root.
  */
 import { Observable, Subject } from 'rxjs';
 import { PendingClips } from '../types';
@@ -12,19 +11,17 @@ import {
 } from './clip-discovery-manager';
 import { ArchiveEventBusLike } from './events';
 
-export interface ClipDiscoveryLoopOptions extends Omit<ClipDiscoveryOptions, 'rootPath'> {
-  rootPath?: string;
-  intervalMs?: number;
+export interface SnapshotDiscoveryConsumerOptions extends Omit<ClipDiscoveryOptions, 'rootPath'> {
   emitOnChangeOnly?: boolean;
   persistPendingClips?: (pending: PendingClips) => void;
-  eventBus?: ArchiveEventBusLike;
+  eventBus: ArchiveEventBusLike;
 }
 
-export class ClipDiscoveryLoop {
+export class SnapshotDiscoveryConsumer {
   private readonly eventsSubject = new Subject<ClipDiscoveryResult>();
+  private readonly pendingScanRoots: string[] = [];
   private running = false;
-  private timer: NodeJS.Timeout | null = null;
-  private inFlight = false;
+  private processing = false;
   private lastEmittedFingerprint = '';
   private unsubscribeBus: (() => void) | null = null;
 
@@ -32,7 +29,7 @@ export class ClipDiscoveryLoop {
 
   constructor(
     private readonly discoveryManager: ClipDiscoveryManager,
-    private readonly options: ClipDiscoveryLoopOptions,
+    private readonly options: SnapshotDiscoveryConsumerOptions,
   ) {}
 
   start(): void {
@@ -40,37 +37,47 @@ export class ClipDiscoveryLoop {
       return;
     }
     this.running = true;
-
-    if (this.options.eventBus) {
-      this.unsubscribeBus = this.options.eventBus.subscribe(async (event) => {
-        if (event.type !== 'snapshot-ready') {
-          return;
-        }
-        await this.pollNow(event.snapshotMountPath);
-      });
-      return;
-    }
-
-    void this.pollNow(this.options.rootPath);
+    this.unsubscribeBus = this.options.eventBus.subscribe(async (event) => {
+      if (event.type !== 'snapshot-ready') {
+        return;
+      }
+      await this.consume(event.scanRootPath);
+    });
   }
 
   stop(): void {
     this.running = false;
     this.unsubscribeBus?.();
     this.unsubscribeBus = null;
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
+    this.pendingScanRoots.length = 0;
     this.eventsSubject.complete();
   }
 
-  async pollNow(rootPath = this.options.rootPath): Promise<void> {
-    if (!rootPath || this.inFlight) {
+  async consume(rootPath: string): Promise<void> {
+    if (!rootPath) {
       return;
     }
 
-    this.inFlight = true;
+    this.pendingScanRoots.push(rootPath);
+    if (this.processing) {
+      return;
+    }
+
+    this.processing = true;
+    try {
+      while (this.running && this.pendingScanRoots.length > 0) {
+        const nextRoot = this.pendingScanRoots.shift();
+        if (!nextRoot) {
+          continue;
+        }
+        await this.processRoot(nextRoot);
+      }
+    } finally {
+      this.processing = false;
+    }
+  }
+
+  private async processRoot(rootPath: string): Promise<void> {
     try {
       const result = await this.discoveryManager.discoverPending({
         ...this.buildDiscoveryOptions(rootPath),
@@ -90,10 +97,7 @@ export class ClipDiscoveryLoop {
         this.lastEmittedFingerprint = '';
       }
     } catch (error) {
-      logger.warn({ error, rootPath }, 'Clip discovery poll failed');
-    } finally {
-      this.inFlight = false;
-      this.scheduleNext();
+      logger.warn({ error, rootPath }, 'Snapshot discovery failed');
     }
   }
 
@@ -110,18 +114,5 @@ export class ClipDiscoveryLoop {
       includePredicate: this.options.includePredicate,
       nowEpochSec: this.options.nowEpochSec,
     };
-  }
-
-  private scheduleNext(): void {
-    if (!this.running || this.options.eventBus || this.options.intervalMs === undefined) {
-      return;
-    }
-    if (this.timer) {
-      clearTimeout(this.timer);
-    }
-
-    this.timer = setTimeout(() => {
-      void this.pollNow(this.options.rootPath);
-    }, Math.max(100, this.options.intervalMs));
   }
 }

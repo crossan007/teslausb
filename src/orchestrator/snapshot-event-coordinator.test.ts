@@ -22,6 +22,7 @@ describe('SnapshotEventCoordinator', () => {
         size: 100,
         isLinked: true,
       })),
+      resolveDiscoveryRoot: vi.fn(async () => '/backingfiles/snapshots/snap-000001/mnt/TeslaCam'),
     };
 
     const eventBus = {

@@ -1,4 +1,4 @@
-export { ensureDir } from './fs';
+export { ensureDir, pathExists } from './fs';
 export {
 	CommandResult,
 	StreamingCommandHandlers,

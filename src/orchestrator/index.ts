@@ -8,7 +8,7 @@ import { gadgetManager } from '../core/gadget-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend, supportsTriggerFileWrites } from '../types';
 import { ClipDiscoveryManager } from './clip-discovery-manager';
-import { ClipDiscoveryLoop } from './clip-discovery-loop';
+import { SnapshotDiscoveryConsumer } from './snapshot-discovery-consumer';
 import { RsyncBackend } from './backends';
 import { RuntimeLifecycleLoop } from './runtime-lifecycle-loop';
 import { BackingImageChangeDetector } from './backing-image-change-detector';
@@ -121,7 +121,7 @@ async function main(): Promise<void> {
   });
   const discovery = new ClipDiscoveryManager();
   const clipArchiveCoordinator = new ClipArchiveCoordinator(backend, undefined, undefined, stateManager);
-  const discoveryLoop = new ClipDiscoveryLoop(discovery, {
+  const discoveryConsumer = new SnapshotDiscoveryConsumer(discovery, {
     archivedListPath: ARCHIVED_LIST_PATH,
     includeSavedclips: config.archiveSavedclips,
     includeSentryclips: config.archiveSentryclips,
@@ -131,12 +131,11 @@ async function main(): Promise<void> {
     persistPendingClips: (pending) => stateManager.writePendingClips(pending),
   });
   const lifecycleLoop = new RuntimeLifecycleLoop(
-    discoveryLoop,
+    discoveryConsumer,
     discovery,
     clipArchiveCoordinator,
     backend,
     {
-      clipDiscoveryRoot: '/tmp/snapshots',
       archivedListPath: ARCHIVED_LIST_PATH,
       archiveDelaySec: config.archiveDelay,
       startTriggerFilePaths,
