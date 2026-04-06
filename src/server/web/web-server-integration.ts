@@ -68,9 +68,10 @@ export class WebServerIntegration {
 
   private setupStateWiring(): void {
     this.statePollTimer = setInterval(() => {
-      const transferQueue = stateManager.readTransferQueue();
-      if (transferQueue) {
-        this.transferSessionView.applyTransferQueue(transferQueue);
+      const clipRegistry = stateManager.readClipRegistry();
+      if (clipRegistry) {
+        this.transferSessionView.applyClipRegistry(clipRegistry);
+        this.snapshotListView.applyClipRegistry(clipRegistry);
       }
 
       const transferSession = stateManager.readTransferSession();

@@ -10,7 +10,7 @@ import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-mana
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend } from '../../types/archive';
 import { ArchiveEventBus, ArchiveEventBusLike } from './events';
-import { TransferQueueManager } from './transfer-queue-manager';
+import { ClipRegistryManager } from './clip-registry-manager';
 
 /**
  * Structural contract expected from any discovery source (snapshot consumer, test fake, etc.).
@@ -71,8 +71,8 @@ export class RuntimeLifecycleLoop {
   private readonly runtimeLogger: RuntimeLifecycleLogger;
   /** Event bus used to emit lifecycle events. */
   private readonly eventBus: ArchiveEventBusLike;
-  /** Queue manager owning dedupe/remap and snapshot release. */
-  private readonly transferQueueManager: TransferQueueManager;
+  /** Clip registry source-of-truth owning transfer eligibility and snapshot release. */
+  private readonly clipRegistryManager: ClipRegistryManager;
 
   /**
    * Builds a runtime lifecycle loop instance.
@@ -88,13 +88,13 @@ export class RuntimeLifecycleLoop {
       syncStatusWriter?: SyncStatusWriter;
       runtimeLogger?: RuntimeLifecycleLogger;
       eventBus?: ArchiveEventBusLike;
-      transferQueueManager?: TransferQueueManager;
+      clipRegistryManager?: ClipRegistryManager;
     },
   ) {
     this.syncStatusWriter = dependencies?.syncStatusWriter ?? stateManager;
     this.runtimeLogger = dependencies?.runtimeLogger ?? logger;
     this.eventBus = dependencies?.eventBus ?? new ArchiveEventBus();
-    this.transferQueueManager = dependencies?.transferQueueManager ?? new TransferQueueManager();
+    this.clipRegistryManager = dependencies?.clipRegistryManager ?? new ClipRegistryManager();
   }
 
   /**
@@ -141,7 +141,7 @@ export class RuntimeLifecycleLoop {
       return;
     }
 
-    await this.transferQueueManager.ingestDiscovery(discoveryResult);
+    await this.clipRegistryManager.ingestDiscovery(discoveryResult);
     await this.drainTransferQueue();
   }
 
@@ -150,7 +150,7 @@ export class RuntimeLifecycleLoop {
    */
   private async drainTransferQueue(): Promise<void> {
     while (true) {
-      const nextClip = this.transferQueueManager.nextQueuedClip();
+      const nextClip = this.clipRegistryManager.nextClipForTransfer();
       if (!nextClip) {
         return;
       }
@@ -162,7 +162,7 @@ export class RuntimeLifecycleLoop {
       }
 
       await this.trySyncTime();
-      this.transferQueueManager.markTransferring([{ key: nextClip.key }]);
+      this.clipRegistryManager.markTransferring(nextClip.key);
 
       await this.eventBus.publish({
         type: 'archive-start',
@@ -180,7 +180,7 @@ export class RuntimeLifecycleLoop {
         let cycleResult;
         try {
           cycleResult = await this.clipArchiveCoordinator.runArchiveCycle({
-            fromPath: nextClip.sourceRootPath,
+            fromPath: nextClip.preferredRootPath,
             files: [nextClip.relPath],
           });
           cycleSucceeded = Boolean(cycleResult && !cycleResult.skipped && cycleResult.failed === 0);
@@ -189,7 +189,7 @@ export class RuntimeLifecycleLoop {
         }
 
         const archivedNowPaths = await this.discoveryManager.resolveArchivedFromSource(
-          nextClip.sourceRootPath,
+          nextClip.preferredRootPath,
           [nextClip.relPath],
         );
         const archived = archivedNowPaths.includes(nextClip.relPath);
@@ -197,9 +197,9 @@ export class RuntimeLifecycleLoop {
         if (cycleSucceeded && archived) {
           archivedMarkedCount = 1;
           await this.discoveryManager.markArchived([nextClip.relPath], this.options.archivedListPath);
-          await this.transferQueueManager.markCompleted([{ key: nextClip.key }]);
+          await this.clipRegistryManager.markTransferred(nextClip.key);
         } else {
-          this.transferQueueManager.resetToQueued([{ key: nextClip.key }]);
+          this.clipRegistryManager.markTransferFailed(nextClip.key);
           this.runtimeLogger.info(
             { relPath: nextClip.relPath, cycleSucceeded, archived },
             'Queued clip transfer did not complete; leaving in queue',
@@ -297,13 +297,13 @@ export class RuntimeLifecycleLoop {
    * Builds sync status pending summary from queued transfer files.
    */
   private buildPendingFromQueue(): PendingClips {
-    const queue = this.transferQueueManager.snapshot();
-    const oldestAgeSec = queue.files.reduce((oldest, file) => Math.max(oldest, file.ageSec), 0);
+    const queue = this.clipRegistryManager.snapshotTransferQueue();
+    const summary = this.clipRegistryManager.pendingSummary();
 
     return {
-      totalFiles: queue.files.length,
+      totalFiles: summary.totalFiles,
       totalEvents: 0,
-      oldestAgeSec,
+      oldestAgeSec: summary.oldestAgeSec,
       files: queue.files.map((file) => ({
         relPath: file.relPath,
         isSymlink: file.isSymlink,

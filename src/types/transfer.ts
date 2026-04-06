@@ -6,6 +6,36 @@ export type TransferFileStatus = z.infer<typeof TransferFileStatusSchema>;
 export const TransferPhaseSchema = z.enum(['starting', 'transferring', 'finalizing', 'completed', 'failed']);
 export type TransferPhase = z.infer<typeof TransferPhaseSchema>;
 
+export const ClipRegistryStatusSchema = z.enum(['pending', 'transferring', 'failed', 'transferred']);
+export type ClipRegistryStatus = z.infer<typeof ClipRegistryStatusSchema>;
+
+export const ClipRegistryEntrySchema = z.object({
+  key: z.string(),
+  clipName: z.string().default(''),
+  relPath: z.string(),
+  firstSeenSnapshotId: z.string(),
+  firstSeenSnapshotCreatedAt: z.number().default(0),
+  firstSeenAt: z.number(),
+  preferredSnapshotId: z.string(),
+  preferredRootPath: z.string(),
+  preferredSnapshotCreatedAt: z.number().default(0),
+  status: ClipRegistryStatusSchema.default('pending'),
+  isSymlink: z.boolean().default(true),
+  ageSec: z.number().default(0),
+  lastAttemptAt: z.number().optional(),
+  transferredAt: z.number().optional(),
+  updatedAt: z.number(),
+});
+
+export type ClipRegistryEntry = z.infer<typeof ClipRegistryEntrySchema>;
+
+export const ClipRegistrySchema = z.object({
+  updatedAt: z.number(),
+  entries: z.array(ClipRegistryEntrySchema).default([]),
+});
+
+export type ClipRegistry = z.infer<typeof ClipRegistrySchema>;
+
 export const TransferQueueFileStatusSchema = z.enum(['queued', 'transferring']);
 export type TransferQueueFileStatus = z.infer<typeof TransferQueueFileStatusSchema>;
 

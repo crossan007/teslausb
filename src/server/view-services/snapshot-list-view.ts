@@ -1,7 +1,7 @@
 import { SnapshotView, FileTransferProgress } from './types';
 import { BaseViewService } from './base-view-service';
 import { ArchiveEventBusLike } from '../orchestrator/events';
-import { Snapshot } from '../../types';
+import { ClipRegistry, Snapshot } from '../../types';
 
 /**
  * Tracks active snapshots and file-level progress per snapshot
@@ -65,6 +65,53 @@ export class SnapshotListViewService extends BaseViewService<SnapshotView[]> {
     }
 
     snap.filesInProgress = Array.from(files?.values() ?? []);
+    this.emit();
+  }
+
+  /**
+   * Projects clip registry into per-snapshot file lists and first-seen counts.
+   */
+  applyClipRegistry(registry: ClipRegistry): void {
+    const bySnapshotId = new Map<string, Map<string, FileTransferProgress>>();
+    const firstSeenCounts = new Map<string, number>();
+
+    for (const entry of registry.entries) {
+      firstSeenCounts.set(
+        entry.firstSeenSnapshotId,
+        (firstSeenCounts.get(entry.firstSeenSnapshotId) ?? 0) + 1,
+      );
+
+      if (entry.status === 'transferred') {
+        continue;
+      }
+
+      const status: FileTransferProgress['status'] =
+        entry.status === 'transferring'
+          ? 'transferring'
+          : entry.status === 'failed'
+            ? 'failed'
+            : 'pending';
+
+      const mapForSnapshot = bySnapshotId.get(entry.firstSeenSnapshotId) ?? new Map<string, FileTransferProgress>();
+      if (!mapForSnapshot.has(entry.relPath)) {
+        mapForSnapshot.set(entry.relPath, {
+          relPath: entry.relPath,
+          isSymlink: entry.isSymlink,
+          ageSec: entry.ageSec,
+          status,
+        });
+      }
+      bySnapshotId.set(entry.firstSeenSnapshotId, mapForSnapshot);
+    }
+
+    this.snapshotFiles = bySnapshotId;
+
+    for (const snap of this.snapshots.values()) {
+      const files = bySnapshotId.get(snap.snapshot.id);
+      snap.filesInProgress = Array.from(files?.values() ?? []);
+      snap.newFilesCount = firstSeenCounts.get(snap.snapshot.id) ?? 0;
+    }
+
     this.emit();
   }
 

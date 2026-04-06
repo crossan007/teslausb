@@ -17,8 +17,8 @@ import {
   PendingClipsSchema,
   TransferSession,
   TransferSessionSchema,
-  TransferQueue,
-  TransferQueueSchema,
+  ClipRegistry,
+  ClipRegistrySchema,
 } from '../../types';
 import { ensureDir } from '../shared';
 
@@ -318,39 +318,39 @@ export class StateManager {
   }
 
   /**
-   * Read current transfer queue.
+   * Read clip registry source-of-truth.
    */
-  readTransferQueue(): TransferQueue | null {
+  readClipRegistry(): ClipRegistry | null {
     try {
-      const path = this.statePath('transfer_queue');
+      const path = this.statePath('clip_registry');
       if (!existsSync(path)) {
         return null;
       }
       const content = readFileSync(path, 'utf-8');
       const data = JSON.parse(content);
-      const parsed = TransferQueueSchema.safeParse(data);
+      const parsed = ClipRegistrySchema.safeParse(data);
       if (!parsed.success) {
-        logger.warn({ issues: parsed.error.issues }, 'Invalid TransferQueue format');
+        logger.warn({ issues: parsed.error.issues }, 'Invalid ClipRegistry format');
         return null;
       }
       return parsed.data;
     } catch (error) {
-      logger.warn({ error }, 'Failed to read transfer queue');
+      logger.warn({ error }, 'Failed to read clip registry');
       return null;
     }
   }
 
   /**
-   * Write current transfer queue.
+   * Write clip registry source-of-truth.
    */
-  writeTransferQueue(queue: TransferQueue): void {
+  writeClipRegistry(registry: ClipRegistry): void {
     try {
-      const path = this.statePath('transfer_queue');
+      const path = this.statePath('clip_registry');
       ensureDir(dirname(path));
-      writeFileSync(path, JSON.stringify(queue, null, 2), 'utf-8');
-      logger.debug({ files: queue.files.length }, 'Transfer queue written');
+      writeFileSync(path, JSON.stringify(registry, null, 2), 'utf-8');
+      logger.debug({ entries: registry.entries.length }, 'Clip registry written');
     } catch (error) {
-      logger.error({ err: error }, 'Failed to write transfer queue');
+      logger.error({ err: error }, 'Failed to write clip registry');
       throw error;
     }
   }

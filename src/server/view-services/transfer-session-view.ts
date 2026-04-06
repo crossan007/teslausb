@@ -1,7 +1,7 @@
 import { TransferSessionView, FileTransferProgress } from './types';
 import { BaseViewService } from './base-view-service';
 import { ArchiveEventBusLike } from '../orchestrator/events';
-import { TransferQueue, TransferSession } from '../../types';
+import { ClipRegistry, TransferSession } from '../../types';
 
 /**
  * Tracks current transferring batch and file-level progress
@@ -34,18 +34,26 @@ export class TransferSessionViewService extends BaseViewService<TransferSessionV
   }
 
   /**
-   * Applies queue-centric transfer state persisted by the orchestrator.
+   * Applies clip-registry transfer state persisted by the orchestrator.
    */
-  applyTransferQueue(queue: TransferQueue): void {
+  applyClipRegistry(registry: ClipRegistry): void {
     this.fileProgress.clear();
-    for (const file of queue.files) {
-      const status: FileTransferProgress['status'] =
-        file.status === 'transferring' ? 'transferring' : 'pending';
+    for (const entry of registry.entries) {
+      if (entry.status === 'transferred') {
+        continue;
+      }
 
-      this.fileProgress.set(file.relPath, {
-        relPath: file.relPath,
-        isSymlink: file.isSymlink,
-        ageSec: file.ageSec,
+      const status: FileTransferProgress['status'] =
+        entry.status === 'transferring'
+          ? 'transferring'
+          : entry.status === 'failed'
+            ? 'failed'
+            : 'pending';
+
+      this.fileProgress.set(entry.relPath, {
+        relPath: entry.relPath,
+        isSymlink: entry.isSymlink,
+        ageSec: entry.ageSec,
         status,
       });
     }

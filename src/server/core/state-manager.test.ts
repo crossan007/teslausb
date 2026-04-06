@@ -3,7 +3,7 @@ import { StateManager } from './state-manager';
 import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { SyncStatus, Snapshot, PendingClips, OperationResult, TransferQueue, TransferSession } from '../../types';
+import { ClipRegistry, SyncStatus, Snapshot, PendingClips, OperationResult, TransferSession } from '../../types';
 
 describe('StateManager', () => {
   let stateManager: StateManager;
@@ -237,31 +237,34 @@ describe('StateManager', () => {
     });
   });
 
-  describe('TransferQueue', () => {
-    it('writes and reads transfer queue', () => {
-      const queue: TransferQueue = {
+  describe('ClipRegistry', () => {
+    it('writes and reads clip registry', () => {
+      const registry: ClipRegistry = {
         updatedAt: Date.now(),
-        files: [
+        entries: [
           {
             key: 'b2s:abc',
             clipName: 'a.mp4',
             relPath: 'SavedClips/a.mp4',
-            status: 'queued',
+            firstSeenSnapshotId: 'snap-1',
+            firstSeenSnapshotCreatedAt: 100,
+            firstSeenAt: Date.now() - 1000,
+            preferredSnapshotId: 'snap-2',
+            preferredRootPath: '/snapshots/snap-2/mnt/TeslaCam',
+            preferredSnapshotCreatedAt: 200,
+            status: 'pending',
             isSymlink: true,
             ageSec: 12,
-            sourceSnapshotId: 'snap-1',
-            sourceRootPath: '/snapshots/snap-1/mnt/TeslaCam',
-            sourceSnapshotCreatedAt: 100,
             updatedAt: Date.now(),
           },
         ],
       };
 
-      stateManager.writeTransferQueue(queue);
-      const read = stateManager.readTransferQueue();
+      stateManager.writeClipRegistry(registry);
+      const read = stateManager.readClipRegistry();
 
-      expect(read).toEqual(queue);
-      expect(read?.files[0].sourceSnapshotId).toBe('snap-1');
+      expect(read).toEqual(registry);
+      expect(read?.entries[0].firstSeenSnapshotId).toBe('snap-1');
     });
   });
 
