@@ -4,6 +4,8 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createServer, Server as HttpServer } from 'http';
 import { existsSync } from 'fs';
 import { logger } from '../core/logger';
+import { stateManager } from '../core';
+import { ClipRegistryEntry } from '../../types';
 import {
   SystemStatusView,
   TransferSessionViewService,
@@ -130,6 +132,138 @@ export class WebServer {
       }
     });
 
+    // Debug diagnostics for clip registry ingest/projection
+    this.app.get('/api/debug/clip-registry', (_req: Request, res: Response) => {
+      try {
+        const limitRaw = Number(_req.query.limit ?? '25');
+        const sampleLimit = Number.isFinite(limitRaw)
+          ? Math.min(200, Math.max(1, Math.floor(limitRaw)))
+          : 25;
+
+        const registry = stateManager.readClipRegistry();
+        const pendingClips = stateManager.readPendingClips();
+        const transferSession = stateManager.readTransferSession();
+        const snapshotState = stateManager.readSnapshot();
+
+        const entries = registry?.entries ?? [];
+        const statusCounts = this.buildStatusCounts(entries);
+
+        const firstSeenSummary = this.groupBySnapshot(entries, 'firstSeenSnapshotId');
+        const preferredSummary = this.groupBySnapshot(entries, 'preferredSnapshotId');
+        const firstSeenBySnapshot = new Map(firstSeenSummary.map((row) => [row.snapshotId, row]));
+        const preferredBySnapshot = new Map(preferredSummary.map((row) => [row.snapshotId, row]));
+
+        const unresolvedByFirstSeenSnapshot = firstSeenSummary.map((row) => ({
+          ...row,
+          unresolvedCount: row.statusCounts.pending + row.statusCounts.transferring + row.statusCounts.failed,
+        }));
+
+        const recentFirstSeen = [...entries]
+          .sort((left, right) => right.firstSeenAt - left.firstSeenAt)
+          .slice(0, sampleLimit)
+          .map((entry) => this.entrySample(entry));
+
+        const recentUpdated = [...entries]
+          .sort((left, right) => right.updatedAt - left.updatedAt)
+          .slice(0, sampleLimit)
+          .map((entry) => this.entrySample(entry));
+
+        const transferQueueSnapshot = this.transferSessionView.getTransferQueueSnapshot();
+        const activeSnapshotId = snapshotState?.id;
+        const activeFirstSeen = activeSnapshotId ? firstSeenBySnapshot.get(activeSnapshotId)?.totalEntries ?? 0 : 0;
+        const activePreferred = activeSnapshotId ? preferredBySnapshot.get(activeSnapshotId)?.totalEntries ?? 0 : 0;
+
+        const alerts: Array<{
+          level: 'info' | 'warning';
+          code: string;
+          message: string;
+        }> = [];
+
+        if (activeSnapshotId && activePreferred > 0 && activeFirstSeen === 0) {
+          alerts.push({
+            level: 'warning',
+            code: 'active_snapshot_no_first_seen',
+            message: `Active snapshot ${activeSnapshotId} has ${activePreferred} preferred entries but 0 first-seen entries`,
+          });
+        }
+
+        if (statusCounts.failed > 0) {
+          alerts.push({
+            level: 'warning',
+            code: 'failed_registry_entries',
+            message: `${statusCounts.failed} clip registry entries are in failed state`,
+          });
+        }
+
+        if (entries.length === 0 && (pendingClips?.totalFiles ?? 0) > 0) {
+          alerts.push({
+            level: 'warning',
+            code: 'pending_without_registry_entries',
+            message: `Pending clips reports ${pendingClips?.totalFiles ?? 0} files but registry is empty`,
+          });
+        }
+
+        if (transferQueueSnapshot.length > 0 && (pendingClips?.totalFiles ?? 0) === 0) {
+          alerts.push({
+            level: 'info',
+            code: 'queue_without_pending_snapshot_count',
+            message: `Transfer queue has ${transferQueueSnapshot.length} items while pending_clips reports 0`,
+          });
+        }
+
+        res.json({
+          generatedAt: Date.now(),
+          summary: {
+            totalEntries: entries.length,
+            statusCounts,
+            distinctFirstSeenSnapshots: firstSeenSummary.length,
+            distinctPreferredSnapshots: preferredSummary.length,
+            queueDepth: transferQueueSnapshot.length,
+          },
+          snapshots: {
+            firstSeen: unresolvedByFirstSeenSnapshot,
+            preferred: preferredSummary,
+          },
+          runtime: {
+            activeSnapshot: snapshotState
+              ? {
+                  id: snapshotState.id,
+                  createdAt: snapshotState.createdAt,
+                  mountPath: snapshotState.mountPath,
+                  isLinked: snapshotState.isLinked,
+                }
+              : null,
+            pendingClips: pendingClips
+              ? {
+                  totalFiles: pendingClips.totalFiles,
+                  totalEvents: pendingClips.totalEvents,
+                  oldestAgeSec: pendingClips.oldestAgeSec,
+                }
+              : null,
+            transferSession: transferSession
+              ? {
+                  sessionId: transferSession.sessionId,
+                  phase: transferSession.phase,
+                  filesTotal: transferSession.filesTotal,
+                  filesCompleted: transferSession.filesCompleted,
+                  filesFailed: transferSession.filesFailed,
+                  currentFilePath: transferSession.currentFilePath,
+                  updatedAt: transferSession.updatedAt,
+                }
+              : null,
+          },
+          alerts,
+          recentSamples: {
+            byFirstSeenAtDesc: recentFirstSeen,
+            byUpdatedAtDesc: recentUpdated,
+          },
+        });
+      } catch (error) {
+        logger.warn({ err: error }, 'Failed to build clip registry debug diagnostics');
+        res.status(500).json({ error: 'Failed to build clip registry debug diagnostics' });
+      }
+    });
+
     // Snapshots list
     this.app.get('/api/snapshots', (_req: Request, res: Response) => {
       try {
@@ -170,6 +304,72 @@ export class WebServer {
     } else {
       logger.warn({ staticPath: this.staticPath }, 'Static files path does not exist; SPA not served');
     }
+  }
+
+  private buildStatusCounts(entries: ClipRegistryEntry[]): Record<'pending' | 'transferring' | 'failed' | 'transferred', number> {
+    return entries.reduce(
+      (acc, entry) => {
+        acc[entry.status] += 1;
+        return acc;
+      },
+      {
+        pending: 0,
+        transferring: 0,
+        failed: 0,
+        transferred: 0,
+      },
+    );
+  }
+
+  private groupBySnapshot(
+    entries: ClipRegistryEntry[],
+    key: 'firstSeenSnapshotId' | 'preferredSnapshotId',
+  ): Array<{
+    snapshotId: string;
+    totalEntries: number;
+    statusCounts: Record<'pending' | 'transferring' | 'failed' | 'transferred', number>;
+    oldestFirstSeenAt: number;
+    newestUpdatedAt: number;
+  }> {
+    const grouped = new Map<string, ClipRegistryEntry[]>();
+    for (const entry of entries) {
+      const snapshotId = entry[key];
+      const list = grouped.get(snapshotId) ?? [];
+      list.push(entry);
+      grouped.set(snapshotId, list);
+    }
+
+    return Array.from(grouped.entries())
+      .map(([snapshotId, snapshotEntries]) => ({
+        snapshotId,
+        totalEntries: snapshotEntries.length,
+        statusCounts: this.buildStatusCounts(snapshotEntries),
+        oldestFirstSeenAt: snapshotEntries.reduce((min, entry) => Math.min(min, entry.firstSeenAt), Number.MAX_SAFE_INTEGER),
+        newestUpdatedAt: snapshotEntries.reduce((max, entry) => Math.max(max, entry.updatedAt), 0),
+      }))
+      .sort((left, right) => right.totalEntries - left.totalEntries || left.snapshotId.localeCompare(right.snapshotId));
+  }
+
+  private entrySample(entry: ClipRegistryEntry): {
+    key: string;
+    relPath: string;
+    status: ClipRegistryEntry['status'];
+    firstSeenSnapshotId: string;
+    preferredSnapshotId: string;
+    firstSeenAt: number;
+    updatedAt: number;
+    ageSec: number;
+  } {
+    return {
+      key: entry.key,
+      relPath: entry.relPath,
+      status: entry.status,
+      firstSeenSnapshotId: entry.firstSeenSnapshotId,
+      preferredSnapshotId: entry.preferredSnapshotId,
+      firstSeenAt: entry.firstSeenAt,
+      updatedAt: entry.updatedAt,
+      ageSec: entry.ageSec,
+    };
   }
 
   private setupWebSocket(): void {

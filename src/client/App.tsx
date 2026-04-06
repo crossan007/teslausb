@@ -4,6 +4,7 @@ import { useWebSocket, useApi } from './hooks';
 import TransferSessionComponent from './components/TransferSession';
 import SnapshotsComponent from './components/Snapshots';
 import SystemStatusComponent from './components/SystemStatus';
+import DiagnosticsComponent from './components/Diagnostics';
 import './App.css';
 
 export default function App() {
@@ -55,6 +56,7 @@ export default function App() {
             wsMessage={wsResult.lastMessage}
             wsConnected={wsResult.isConnected}
           />
+          <DiagnosticsComponent />
         </div>
       </main>
 
