@@ -4,7 +4,7 @@
  */
 import { readFile } from 'fs/promises';
 import { logger } from './logger';
-import { SystemStatus } from '../../types';
+import { NetworkHealthSample, SystemStatus } from '../../types';
 import { CommandRunner, defaultCommandRunner } from '../shared/command-runner';
 import { SnapshotManager } from '../orchestrator/snapshot-manager';
 
@@ -14,6 +14,8 @@ export interface SystemStatusManagerOptions {
   pingPacketSize?: number;
   thermalZonePath?: string;
   commandRunner?: CommandRunner;
+  networkHealthPollMs?: number;
+  networkHealthHistorySize?: number;
 }
 
 export class SystemStatusManager {
@@ -22,6 +24,10 @@ export class SystemStatusManager {
   private readonly pingPacketSize: number;
   private readonly thermalZonePath: string;
   private readonly commandRunner: CommandRunner;
+  private readonly networkHealthPollMs: number;
+  private readonly networkHealthHistorySize: number;
+  private readonly networkHealthHistory: NetworkHealthSample[] = [];
+  private networkProbeInFlight: Promise<void> | null = null;
 
   constructor(options: SystemStatusManagerOptions = {}) {
     this.snapshotManager = options.snapshotManager;
@@ -29,17 +35,27 @@ export class SystemStatusManager {
     this.pingPacketSize = options.pingPacketSize ?? 1024;
     this.thermalZonePath = options.thermalZonePath ?? '/sys/class/thermal/thermal_zone0/temp';
     this.commandRunner = options.commandRunner ?? defaultCommandRunner;
+    this.networkHealthPollMs = Math.max(1000, options.networkHealthPollMs ?? 60_000);
+    this.networkHealthHistorySize = Math.max(1, options.networkHealthHistorySize ?? 5);
+
+    const timer = setInterval(() => {
+      void this.refreshNetworkHealthCache();
+    }, this.networkHealthPollMs);
+    timer.unref?.();
   }
 
   async readSystemStatus(): Promise<SystemStatus | null> {
     try {
       const uptime = Math.floor(process.uptime());
-      const [diskUsage, numSnapshots, networkHealth, cpuTemp] = await Promise.all([
+      await this.ensureNetworkHealthSample();
+      const [diskUsage, numSnapshots, cpuTemp] = await Promise.all([
         this.getDiskUsage(),
         this.getSnapshotCount(),
-        this.getNetworkHealth(),
         this.getCpuTemperature(),
       ]);
+
+      const history = this.getNetworkHealthHistorySnapshot();
+      const latestNetworkHealth = history.at(-1);
 
       const status: SystemStatus = {
         uptime,
@@ -48,8 +64,9 @@ export class SystemStatusManager {
         freeSpace: diskUsage?.free ?? 0,
         numSnapshots,
         cpuTempC: cpuTemp ?? undefined,
-        pingTimeMs: networkHealth?.pingMs,
-        packetLoss: networkHealth?.packetLoss,
+        pingTimeMs: latestNetworkHealth?.pingMs,
+        packetLoss: latestNetworkHealth?.packetLoss,
+        networkHealthHistory: history,
       };
 
       return status;
@@ -101,16 +118,25 @@ export class SystemStatusManager {
     packetLoss: number;
   } | null> {
     try {
-      // Run ping with count 4, specify packet size, and capture stats
+      // Bound ping latency so /api/system-status stays responsive even when gateway is unreachable.
+      // -n: numeric output (no reverse DNS)
+      // -c 2: two probes
+      // -W 1: one-second per-reply timeout
+      // -w 3: three-second overall deadline
       const result = await this.commandRunner.run('ping', [
+        '-n',
         '-c',
-        '4',
+        '2',
         '-s',
         String(this.pingPacketSize),
         '-W',
-        '2000', // 2 second timeout
+        '1',
+        '-w',
+        '3',
         this.defaultGateway,
-      ]);
+      ], {
+        timeout: 4000,
+      });
 
       if (result.code !== 0) {
         logger.debug({ gateway: this.defaultGateway }, 'Ping failed');
@@ -138,6 +164,45 @@ export class SystemStatusManager {
     } catch (error) {
       logger.debug({ err: error }, 'Failed to measure network health');
       return null;
+    }
+  }
+
+  private async ensureNetworkHealthSample(): Promise<void> {
+    if (this.networkHealthHistory.length > 0) {
+      return;
+    }
+    await this.refreshNetworkHealthCache();
+  }
+
+  private getNetworkHealthHistorySnapshot(): NetworkHealthSample[] {
+    return this.networkHealthHistory.map((sample) => ({ ...sample }));
+  }
+
+  private async refreshNetworkHealthCache(): Promise<void> {
+    if (this.networkProbeInFlight) {
+      return this.networkProbeInFlight;
+    }
+
+    this.networkProbeInFlight = (async () => {
+      const measured = await this.getNetworkHealth();
+      this.networkHealthHistory.push({
+        timestampMs: Date.now(),
+        pingMs: measured?.pingMs,
+        packetLoss: measured?.packetLoss,
+      });
+
+      if (this.networkHealthHistory.length > this.networkHealthHistorySize) {
+        this.networkHealthHistory.splice(
+          0,
+          this.networkHealthHistory.length - this.networkHealthHistorySize,
+        );
+      }
+    })();
+
+    try {
+      await this.networkProbeInFlight;
+    } finally {
+      this.networkProbeInFlight = null;
     }
   }
 

@@ -46,6 +46,8 @@ describe('SystemStatusManager', () => {
     expect(status?.numSnapshots).toBeGreaterThanOrEqual(0);
     expect(status?.pingTimeMs).toBeGreaterThan(0);
     expect(status?.packetLoss).toBe(0);
+    expect(status?.networkHealthHistory.length).toBe(1);
+    expect(status?.networkHealthHistory[0].pingMs).toBeGreaterThan(0);
   });
 
   it('returns status with nullish network fields when ping fails', async () => {
@@ -70,5 +72,7 @@ describe('SystemStatusManager', () => {
     expect(status).not.toBeNull();
     expect(status?.pingTimeMs).toBeUndefined();
     expect(status?.packetLoss).toBeUndefined();
+    expect(status?.networkHealthHistory.length).toBe(1);
+    expect(status?.networkHealthHistory[0].pingMs).toBeUndefined();
   });
 });
