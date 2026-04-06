@@ -124,6 +124,32 @@ describe('ClipRegistryManager', () => {
     expect(queueDuringTransfer.files[0].status).toBe('transferring');
   });
 
+  it('derives pending clips snapshot from registry entries', async () => {
+    const manager = new ClipRegistryManager();
+    const snap = snapshot('snap-1', 100, async () => undefined);
+
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-1/mnt/TeslaCam', 'SavedClips/event-a/front.mp4', snap),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-1/mnt/TeslaCam', 'SavedClips/event-a/rear.mp4', snap),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-1/mnt/TeslaCam', 'RecentClips/latest.mp4', snap),
+    );
+
+    const pending = manager.snapshotPendingClips();
+    expect(pending.totalFiles).toBe(3);
+    expect(pending.totalEvents).toBe(1);
+
+    const next = manager.nextClipForTransfer();
+    expect(next).toBeDefined();
+    await manager.markTransferred(next!.key);
+
+    const pendingAfterTransfer = manager.snapshotPendingClips();
+    expect(pendingAfterTransfer.totalFiles).toBe(2);
+  });
+
     it('identifies pruneable snapshots with redundant files', async () => {
       const manager = new ClipRegistryManager();
       const snap1 = snapshot('snap-1', 100, async () => undefined);

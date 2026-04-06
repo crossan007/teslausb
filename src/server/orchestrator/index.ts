@@ -8,7 +8,6 @@ import { gadgetManager } from '../core/gadget-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend, supportsTriggerFileWrites } from '../../types';
 import { ClipDiscoveryManager } from './clip-discovery/clip-discovery-manager';
-import { SnapshotDiscoveryConsumer } from './clip-discovery/snapshot-discovery-consumer';
 import { RsyncBackend } from './backends';
 import { RuntimeLifecycleLoop } from './runtime-lifecycle-loop';
 import { BackingImageChangeDetector } from './snapshot/backing-image-change-detector';
@@ -168,17 +167,7 @@ export async function startOrchestrator(config: TeslaUSBConfig): Promise<Orchest
     transferSessionRecovered,
     clipRegistryRecoveredTransferring: clipRegistryManager.startupRecoveredTransferringCount(),
   });
-  const discoveryConsumer = new SnapshotDiscoveryConsumer(discovery, {
-    archivedListPath: ARCHIVED_LIST_PATH,
-    includeSavedclips: config.archiveSavedclips,
-    includeSentryclips: config.archiveSentryclips,
-    includeTrackmodeclips: config.archiveTrackmodeclips,
-    includeRecentclips: config.archiveRecentclips,
-    eventBus,
-    persistPendingClips: (pending) => stateManager.writePendingClips(pending),
-  });
   const lifecycleLoop = new RuntimeLifecycleLoop(
-    discoveryConsumer,
     discovery,
     clipArchiveCoordinator,
     backend,
@@ -187,6 +176,10 @@ export async function startOrchestrator(config: TeslaUSBConfig): Promise<Orchest
       archiveDelaySec: config.archiveDelay,
       startTriggerFilePaths,
       finishTriggerFilePaths,
+      includeSavedclips: config.archiveSavedclips,
+      includeSentryclips: config.archiveSentryclips,
+      includeTrackmodeclips: config.archiveTrackmodeclips,
+      includeRecentclips: config.archiveRecentclips,
     },
     undefined,
     {

@@ -1,4 +1,4 @@
-import { ClipRegistry, ClipRegistryEntry, Snapshot, TransferQueue, TransferQueueFile } from '../../types';
+import { ClipRegistry, ClipRegistryEntry, PendingClips, Snapshot, TransferQueue, TransferQueueFile } from '../../types';
 import { ClipDiscoveryResult } from './clip-discovery/clip-discovery-manager';
 import { logger } from '../core';
 
@@ -213,6 +213,35 @@ export class ClipRegistryManager {
     return {
       totalFiles: pending.length,
       oldestAgeSec,
+    };
+  }
+
+  snapshotPendingClips(): PendingClips {
+    const pendingEntries = Array.from(this.entriesByKey.values())
+      .filter((entry) => entry.status !== 'transferred')
+      .sort((left, right) => left.relPath.localeCompare(right.relPath));
+
+    const eventDirs = new Set<string>();
+    for (const entry of pendingEntries) {
+      if (entry.relPath.startsWith('SavedClips/') || entry.relPath.startsWith('SentryClips/')) {
+        const index = entry.relPath.lastIndexOf('/');
+        if (index > 0) {
+          eventDirs.add(entry.relPath.slice(0, index));
+        }
+      }
+    }
+
+    const oldestAgeSec = pendingEntries.reduce((oldest, entry) => Math.max(oldest, entry.ageSec), 0);
+
+    return {
+      totalFiles: pendingEntries.length,
+      totalEvents: eventDirs.size,
+      oldestAgeSec,
+      files: pendingEntries.map((entry) => ({
+        relPath: entry.relPath,
+        isSymlink: entry.isSymlink,
+        ageSec: entry.ageSec,
+      })),
     };
   }
 

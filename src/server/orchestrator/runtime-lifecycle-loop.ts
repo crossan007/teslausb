@@ -2,17 +2,15 @@
  * Legacy lineage:
  * - run/archiveloop (main wait/reachability/archive lifecycle loop)
  */
-import { concatMap, Observable, Subscription } from 'rxjs';
 import { logger, stateManager } from '../core';
 import { CommandRunner, defaultCommandRunner } from '../shared/command-runner';
 import { DefaultSyncStatus, PendingClips, SyncStatus } from '../../types';
-import { buildPendingClips, ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery/clip-discovery-manager';
+import { ClipDiscoveryManager, ClipDiscoveryOptions, ClipDiscoveryResult } from './clip-discovery/clip-discovery-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend } from '../../types/archive';
-import { ArchiveEventBus, ArchiveEventBusLike } from './events';
+import { ArchiveEventBus, ArchiveEventBusLike, SnapshotReadyEvent } from './events';
 import { ClipRegistryManager } from './clip-registry-manager';
 import { SnapshotManager } from './snapshot/snapshot-manager';
-import { DiscoverySource } from './discovery-source';
 
 /**
  * Controls polling cadence and lifecycle hook behavior around archive cycles.
@@ -32,6 +30,14 @@ export interface RuntimeLifecycleLoopOptions {
   finishTriggerFilePaths?: string[];
   /** Stop queue drain after this many consecutive transfer failures. Defaults to 3. */
   maxConsecutiveTransferFailures?: number;
+  includeSavedclips?: boolean;
+  includeSentryclips?: boolean;
+  includeTrackmodeclips?: boolean;
+  includeRecentclips?: boolean;
+  minClipSizeBytes?: number;
+  statConcurrency?: number;
+  includePredicate?: ClipDiscoveryOptions['includePredicate'];
+  nowEpochSec?: number;
 }
 
 /**
@@ -58,14 +64,17 @@ export interface RuntimeLifecycleLogger {
  * Coordinates clip discovery events with runtime lifecycle hooks and archive execution.
  */
 export class RuntimeLifecycleLoop {
-  /** Subscription for the serialized discovery processing stream. */
-  private subscription: Subscription | null = null;
+  private unsubscribeSnapshotEvents: (() => void) | null = null;
+  private readonly pendingSnapshotEvents: SnapshotReadyEvent[] = [];
+  private processingSnapshotEvents = false;
   /** State writer used while waiting for backend reachability. */
   private readonly syncStatusWriter: SyncStatusWriter;
   /** Logger used for runtime lifecycle events. */
   private readonly runtimeLogger: RuntimeLifecycleLogger;
   /** Event bus used to emit lifecycle events. */
   private readonly eventBus: ArchiveEventBusLike;
+  /** Pending-clips persistence sink for diagnostics/UI surfaces. */
+  private readonly persistPendingClips: (pending: PendingClips) => void;
   /** Clip registry source-of-truth owning transfer eligibility and snapshot release. */
   private readonly clipRegistryManager: ClipRegistryManager;
   /** Snapshot manager for pruning obsolete snapshots. */
@@ -75,7 +84,6 @@ export class RuntimeLifecycleLoop {
    * Builds a runtime lifecycle loop instance.
    */
   constructor(
-    private readonly discoveryLoop: DiscoverySource,
     private readonly discoveryManager: ClipDiscoveryManager,
     private readonly clipArchiveCoordinator: ClipArchiveCoordinator,
     private readonly backend: ArchiveBackend,
@@ -85,6 +93,7 @@ export class RuntimeLifecycleLoop {
       syncStatusWriter?: SyncStatusWriter;
       runtimeLogger?: RuntimeLifecycleLogger;
       eventBus?: ArchiveEventBusLike;
+      persistPendingClips?: (pending: PendingClips) => void;
       clipRegistryManager?: ClipRegistryManager;
       snapshotManager?: SnapshotManager;
     },
@@ -92,6 +101,7 @@ export class RuntimeLifecycleLoop {
     this.syncStatusWriter = dependencies?.syncStatusWriter ?? stateManager;
     this.runtimeLogger = dependencies?.runtimeLogger ?? logger;
     this.eventBus = dependencies?.eventBus ?? new ArchiveEventBus();
+    this.persistPendingClips = dependencies?.persistPendingClips ?? ((pending) => stateManager.writePendingClips(pending));
     this.clipRegistryManager = dependencies?.clipRegistryManager ?? new ClipRegistryManager();
     this.snapshotManager = dependencies?.snapshotManager;
   }
@@ -100,47 +110,81 @@ export class RuntimeLifecycleLoop {
    * Starts the lifecycle loop and subscribes to discovery events.
    */
   start(): void {
-    if (this.subscription) {
+    if (this.unsubscribeSnapshotEvents) {
       return;
     }
 
-    this.subscription = this.discoveryStream()
-      .pipe(concatMap(async (discoveryResult) => this.handleDiscovery(discoveryResult)))
-      .subscribe({
-        error: (error) => {
-          this.runtimeLogger.error({ err: error }, 'Runtime lifecycle stream failed');
-        },
-      });
-
-    this.discoveryLoop.start();
+    this.unsubscribeSnapshotEvents = this.eventBus.subscribe(async (event) => {
+      if (event.type !== 'snapshot-ready') {
+        return;
+      }
+      await this.consumeSnapshotEvent(event);
+    });
   }
 
   /**
    * Stops discovery and unsubscribes lifecycle processing.
    */
   stop(): void {
-    this.subscription?.unsubscribe();
-    this.subscription = null;
-    this.discoveryLoop.stop();
-  }
-
-  /**
-   * Returns the discovery observable to support targeted tests.
-   */
-  protected discoveryStream(): Observable<ClipDiscoveryResult> {
-    return this.discoveryLoop.discovered$;
+    this.unsubscribeSnapshotEvents?.();
+    this.unsubscribeSnapshotEvents = null;
+    this.pendingSnapshotEvents.length = 0;
   }
 
   /**
    * Handles one discovered clip batch through lifecycle hooks and archive execution.
    */
-  private async handleDiscovery(discoveryResult: ClipDiscoveryResult): Promise<void> {
-    if (!discoveryResult.snapshot) {
-      await this.handleDirectBatch(discoveryResult);
+  private async consumeSnapshotEvent(event: SnapshotReadyEvent): Promise<void> {
+    this.pendingSnapshotEvents.push(event);
+    if (this.processingSnapshotEvents) {
+      return;
+    }
+
+    this.processingSnapshotEvents = true;
+    try {
+      while (this.pendingSnapshotEvents.length > 0) {
+        const next = this.pendingSnapshotEvents.shift();
+        if (!next) {
+          continue;
+        }
+        await this.handleSnapshotReady(next);
+      }
+    } finally {
+      this.processingSnapshotEvents = false;
+    }
+  }
+
+  private async handleSnapshotReady(event: SnapshotReadyEvent): Promise<void> {
+    let discoveryResult: ClipDiscoveryResult;
+
+    try {
+      const discovered = await this.discoveryManager.discoverPending({
+        rootPath: event.scanRootPath,
+        archivedListPath: this.options.archivedListPath,
+        includeSavedclips: this.options.includeSavedclips,
+        includeSentryclips: this.options.includeSentryclips,
+        includeTrackmodeclips: this.options.includeTrackmodeclips,
+        includeRecentclips: this.options.includeRecentclips,
+        minClipSizeBytes: this.options.minClipSizeBytes,
+        statConcurrency: this.options.statConcurrency,
+        includePredicate: this.options.includePredicate,
+        nowEpochSec: this.options.nowEpochSec,
+      });
+
+      discoveryResult = {
+        ...discovered,
+        snapshot: event.snapshot,
+      };
+    } catch (error) {
+      this.runtimeLogger.warn(
+        { err: error, scanRootPath: event.scanRootPath, snapshotId: event.snapshot.id },
+        'Snapshot discovery failed in runtime lifecycle loop',
+      );
       return;
     }
 
     await this.clipRegistryManager.ingestDiscovery(discoveryResult);
+    this.persistPendingFromRegistry();
     await this.pruneObsoleteSnapshots();
     await this.drainTransferQueue();
   }
@@ -195,7 +239,7 @@ export class RuntimeLifecycleLoop {
         return;
       }
 
-      const pending = this.buildPendingFromQueue();
+      const pending = this.clipRegistryManager.snapshotPendingClips();
       const reachable = await this.waitUntilReachable(pending);
       if (!reachable) {
         return;
@@ -203,6 +247,7 @@ export class RuntimeLifecycleLoop {
 
       await this.trySyncTime();
       this.clipRegistryManager.markTransferring(nextClip.key);
+      this.persistPendingFromRegistry();
 
       await this.eventBus.publish({
         type: 'archive-start',
@@ -238,9 +283,11 @@ export class RuntimeLifecycleLoop {
           archivedMarkedCount = 1;
           await this.discoveryManager.markArchived([nextClip.relPath], this.options.archivedListPath);
           await this.clipRegistryManager.markTransferred(nextClip.key);
+          this.persistPendingFromRegistry();
           consecutiveFailures = 0;
         } else {
           this.clipRegistryManager.markTransferFailed(nextClip.key);
+          this.persistPendingFromRegistry();
           consecutiveFailures += 1;
           const failureReason = !cycleSucceeded
             ? 'archive_cycle_failed'
@@ -286,93 +333,8 @@ export class RuntimeLifecycleLoop {
     }
   }
 
-  /**
-   * Legacy-compatible processing path for direct discovery batches without snapshot metadata.
-   */
-  private async handleDirectBatch(discoveryResult: ClipDiscoveryResult): Promise<void> {
-    const filePaths = discoveryResult.clips.map((clip) => clip.relPath);
-    const pendingClips = buildPendingClips(discoveryResult.clips);
-    const reachable = await this.waitUntilReachable(pendingClips);
-    if (!reachable) {
-      return;
-    }
-
-    await this.trySyncTime();
-    await this.eventBus.publish({
-      type: 'archive-start',
-      occurredAtMs: Date.now(),
-      totalFiles: pendingClips.totalFiles,
-      totalEvents: pendingClips.totalEvents,
-      triggerFilePaths: this.options.startTriggerFilePaths ?? [],
-    });
-    await this.sleepMs(Math.max(0, this.options.archiveDelaySec) * 1000);
-
-    let cycleSucceeded = false;
-    let archivedMarkedCount = 0;
-
-    try {
-      let cycleResult;
-      try {
-        cycleResult = await this.clipArchiveCoordinator.runArchiveCycle({
-          fromPath: discoveryResult.rootPath,
-          files: filePaths,
-        });
-        cycleSucceeded = Boolean(cycleResult && !cycleResult.skipped && cycleResult.failed === 0);
-      } catch (error) {
-        this.runtimeLogger.error({ err: error }, 'Archive cycle failed for direct discovery batch');
-      }
-
-      const archivedNow = await this.discoveryManager.resolveArchivedFromSource(
-        discoveryResult.rootPath,
-        filePaths,
-      );
-
-      if (cycleSucceeded) {
-        archivedMarkedCount = archivedNow.length;
-        if (archivedNow.length > 0) {
-          await this.discoveryManager.markArchived(archivedNow, this.options.archivedListPath);
-        }
-      } else {
-        this.runtimeLogger.info(
-          { filePaths: filePaths.length },
-          'Archive cycle did not succeed – skipping markArchived so files remain pending',
-        );
-      }
-
-      this.runtimeLogger.info(
-        { archivedMarked: archivedMarkedCount, cycleSucceeded, result: cycleResult },
-        'Archive cycle completed from direct discovery batch',
-      );
-    } finally {
-      await this.eventBus.publish({
-        type: 'archive-finish',
-        occurredAtMs: Date.now(),
-        totalFiles: pendingClips.totalFiles,
-        totalEvents: pendingClips.totalEvents,
-        archivedFiles: archivedMarkedCount,
-        succeeded: cycleSucceeded,
-        triggerFilePaths: cycleSucceeded ? (this.options.finishTriggerFilePaths ?? []) : [],
-      });
-    }
-  }
-
-  /**
-   * Builds sync status pending summary from queued transfer files.
-   */
-  private buildPendingFromQueue(): PendingClips {
-    const queue = this.clipRegistryManager.snapshotTransferQueue();
-    const summary = this.clipRegistryManager.pendingSummary();
-
-    return {
-      totalFiles: summary.totalFiles,
-      totalEvents: 0,
-      oldestAgeSec: summary.oldestAgeSec,
-      files: queue.files.map((file) => ({
-        relPath: file.relPath,
-        isSymlink: file.isSymlink,
-        ageSec: file.ageSec,
-      })),
-    };
+  private persistPendingFromRegistry(): void {
+    this.persistPendingClips(this.clipRegistryManager.snapshotPendingClips());
   }
 
   /**

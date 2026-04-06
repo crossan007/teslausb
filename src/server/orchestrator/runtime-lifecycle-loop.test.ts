@@ -1,9 +1,8 @@
-import { Observable, Subject } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 import { Snapshot, SyncStatus } from '../../types';
 import { CommandResult, CommandRunner } from '../shared/command-runner';
 import { RuntimeLifecycleLoop } from './runtime-lifecycle-loop';
-import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery/clip-discovery-manager';
+import { ClipDiscoveryManager } from './clip-discovery/clip-discovery-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend, ArchiveTransferExecution, createCompletedTransferExecution } from '../../types/archive';
 import { ArchiveEvent } from './events';
@@ -85,6 +84,28 @@ class FakeOrchestratorSequence {
 
 class FakeDiscoveryManager {
   marked: string[] = [];
+  private pendingDiscoveries: string[][] = [];
+
+  queueDiscovery(filePaths: string[]): void {
+    this.pendingDiscoveries.push(filePaths);
+  }
+
+  async discoverPending(options: { rootPath: string }): Promise<{
+    rootPath: string;
+    clips: ReturnType<typeof clip>[];
+    candidatesDiscovered: number;
+    candidatesFiltered: number;
+    previouslyArchivedRetained: number;
+  }> {
+    const filePaths = this.pendingDiscoveries.shift() ?? [];
+    return {
+      rootPath: options.rootPath,
+      clips: filePaths.map((relPath) => clip(relPath, options.rootPath)),
+      candidatesDiscovered: filePaths.length,
+      candidatesFiltered: 0,
+      previouslyArchivedRetained: 0,
+    };
+  }
 
   async resolveArchivedFromSource(_rootPath: string, filePaths: string[]): Promise<string[]> {
     return filePaths;
@@ -95,22 +116,24 @@ class FakeDiscoveryManager {
   }
 }
 
-class FakeDiscoveryLoop {
-  readonly subject = new Subject<ClipDiscoveryResult>();
-  started = false;
-  stopped = false;
+type EventSubscriber = (event: ArchiveEvent) => void | Promise<void>;
 
-  get discovered$(): Observable<ClipDiscoveryResult> {
-    return this.subject.asObservable();
+class FakeEventBus {
+  private readonly subscribers = new Set<EventSubscriber>();
+  readonly published: ArchiveEvent[] = [];
+
+  async publish(event: ArchiveEvent): Promise<void> {
+    this.published.push(event);
+    for (const subscriber of this.subscribers) {
+      await subscriber(event);
+    }
   }
 
-  start(): void {
-    this.started = true;
-  }
-
-  stop(): void {
-    this.stopped = true;
-    this.subject.complete();
+  subscribe(subscriber: EventSubscriber): () => void {
+    this.subscribers.add(subscriber);
+    return () => {
+      this.subscribers.delete(subscriber);
+    };
   }
 }
 
@@ -150,7 +173,7 @@ function clip(relPath: string, rootPath: string) {
 
 describe('RuntimeLifecycleLoop', () => {
   it('waits for reachability and processes archive batch with lifecycle hooks', async () => {
-    const discoveryLoop = new FakeDiscoveryLoop();
+    const eventBus = new FakeEventBus();
     const manager = new FakeDiscoveryManager();
     const orchestrator = new FakeOrchestrator();
     const backend = new FakeBackend(2);
@@ -161,7 +184,6 @@ describe('RuntimeLifecycleLoop', () => {
     const releasedSnapshots: string[] = [];
 
     const loop = new RuntimeLifecycleLoop(
-      discoveryLoop,
       manager as unknown as ClipDiscoveryManager,
       orchestrator as unknown as ClipArchiveCoordinator,
       backend,
@@ -182,30 +204,28 @@ describe('RuntimeLifecycleLoop', () => {
           warn: () => undefined,
           error: () => undefined,
         },
-        eventBus: {
-          publish: async (event: ArchiveEvent) => {
-            triggerEvents.push(event);
-          },
-          subscribe: () => () => undefined,
-        },
+        eventBus,
+        persistPendingClips: () => undefined,
       },
     );
 
     loop.start();
     const rootPath = '/backingfiles/snapshots/snap-000001/mnt/TeslaCam';
-    const relPath = 'SavedClips/evt1/file.mp4';
-    discoveryLoop.subject.next({
-      rootPath,
-      clips: [clip(relPath, rootPath)],
-      candidatesDiscovered: 1,
-      candidatesFiltered: 0,
-      previouslyArchivedRetained: 0,
+    manager.queueDiscovery(['SavedClips/evt1/file.mp4']);
+    await eventBus.publish({
+      type: 'snapshot-ready',
+      occurredAtMs: Date.now(),
       snapshot: snapshotWithRelease('snap-000001', async () => {
         releasedSnapshots.push('snap-000001');
       }),
+      scanRootPath: rootPath,
     });
 
     await waitForCondition(() => orchestrator.calls === 1, 1000);
+
+    triggerEvents.push(
+      ...eventBus.published.filter((event) => event.type === 'archive-start' || event.type === 'archive-finish'),
+    );
 
     expect(orchestrator.calls).toBe(1);
     expect(manager.marked).toEqual(['SavedClips/evt1/file.mp4']);
@@ -217,7 +237,7 @@ describe('RuntimeLifecycleLoop', () => {
   });
 
   it('skips archive when reachability checks are exhausted', async () => {
-    const discoveryLoop = new FakeDiscoveryLoop();
+    const eventBus = new FakeEventBus();
     const manager = new FakeDiscoveryManager();
     const orchestrator = new FakeOrchestrator();
     const backend = new FakeBackend(100);
@@ -225,7 +245,6 @@ describe('RuntimeLifecycleLoop', () => {
     const syncStatusWrites: SyncStatus[] = [];
 
     const loop = new RuntimeLifecycleLoop(
-      discoveryLoop,
       manager as unknown as ClipDiscoveryManager,
       orchestrator as unknown as ClipArchiveCoordinator,
       backend,
@@ -247,18 +266,19 @@ describe('RuntimeLifecycleLoop', () => {
           warn: () => undefined,
           error: () => undefined,
         },
+        eventBus,
+        persistPendingClips: () => undefined,
       },
     );
 
     loop.start();
     const rootPath = '/backingfiles/snapshots/snap-000001/mnt/TeslaCam';
-    const relPath = 'SavedClips/evt1/file.mp4';
-    discoveryLoop.subject.next({
-      rootPath,
-      clips: [clip(relPath, rootPath)],
-      candidatesDiscovered: 1,
-      candidatesFiltered: 0,
-      previouslyArchivedRetained: 0,
+    manager.queueDiscovery(['SavedClips/evt1/file.mp4']);
+    await eventBus.publish({
+      type: 'snapshot-ready',
+      occurredAtMs: Date.now(),
+      snapshot: snapshotWithRelease('snap-000001', async () => undefined),
+      scanRootPath: rootPath,
     });
 
     await waitForCondition(() => syncStatusWrites.length >= 2, 1000);
@@ -271,14 +291,13 @@ describe('RuntimeLifecycleLoop', () => {
   });
 
   it('stops queue drain after 3 consecutive transfer failures', async () => {
-    const discoveryLoop = new FakeDiscoveryLoop();
+    const eventBus = new FakeEventBus();
     const manager = new FakeDiscoveryManager();
     const orchestrator = new FakeOrchestratorSequence(['fail', 'fail', 'fail', 'fail']);
     const backend = new FakeBackend(1);
     const warned: string[] = [];
 
     const loop = new RuntimeLifecycleLoop(
-      discoveryLoop,
       manager as unknown as ClipDiscoveryManager,
       orchestrator as unknown as ClipArchiveCoordinator,
       backend,
@@ -300,19 +319,19 @@ describe('RuntimeLifecycleLoop', () => {
           },
           error: () => undefined,
         },
+        eventBus,
+        persistPendingClips: () => undefined,
       },
     );
 
     loop.start();
     const rootPath = '/backingfiles/snapshots/snap-000001/mnt/TeslaCam';
-    const relPath = 'SavedClips/evt1/file.mp4';
-    discoveryLoop.subject.next({
-      rootPath,
-      clips: [clip(relPath, rootPath)],
-      candidatesDiscovered: 1,
-      candidatesFiltered: 0,
-      previouslyArchivedRetained: 0,
+    manager.queueDiscovery(['SavedClips/evt1/file.mp4']);
+    await eventBus.publish({
+      type: 'snapshot-ready',
+      occurredAtMs: Date.now(),
       snapshot: snapshotWithRelease('snap-000001', async () => undefined),
+      scanRootPath: rootPath,
     });
 
     await waitForCondition(() => orchestrator.calls === 3, 1000);
@@ -324,14 +343,13 @@ describe('RuntimeLifecycleLoop', () => {
   });
 
   it('resets consecutive failure counter after a success', async () => {
-    const discoveryLoop = new FakeDiscoveryLoop();
+    const eventBus = new FakeEventBus();
     const manager = new FakeDiscoveryManager();
     const orchestrator = new FakeOrchestratorSequence(['fail', 'success', 'fail', 'fail', 'fail']);
     const backend = new FakeBackend(1);
     const warned: string[] = [];
 
     const loop = new RuntimeLifecycleLoop(
-      discoveryLoop,
       manager as unknown as ClipDiscoveryManager,
       orchestrator as unknown as ClipArchiveCoordinator,
       backend,
@@ -353,20 +371,19 @@ describe('RuntimeLifecycleLoop', () => {
           },
           error: () => undefined,
         },
+        eventBus,
+        persistPendingClips: () => undefined,
       },
     );
 
     loop.start();
     const rootPath = '/backingfiles/snapshots/snap-000001/mnt/TeslaCam';
-    const relPathA = 'SavedClips/evt1/a.mp4';
-    const relPathB = 'SavedClips/evt1/b.mp4';
-    discoveryLoop.subject.next({
-      rootPath,
-      clips: [clip(relPathA, rootPath), clip(relPathB, rootPath)],
-      candidatesDiscovered: 2,
-      candidatesFiltered: 0,
-      previouslyArchivedRetained: 0,
+    manager.queueDiscovery(['SavedClips/evt1/a.mp4', 'SavedClips/evt1/b.mp4']);
+    await eventBus.publish({
+      type: 'snapshot-ready',
+      occurredAtMs: Date.now(),
       snapshot: snapshotWithRelease('snap-000001', async () => undefined),
+      scanRootPath: rootPath,
     });
 
     await waitForCondition(() => orchestrator.calls === 5, 1000);
