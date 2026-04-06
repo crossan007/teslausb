@@ -6,6 +6,31 @@ export type TransferFileStatus = z.infer<typeof TransferFileStatusSchema>;
 export const TransferPhaseSchema = z.enum(['starting', 'transferring', 'finalizing', 'completed', 'failed']);
 export type TransferPhase = z.infer<typeof TransferPhaseSchema>;
 
+export const TransferQueueFileStatusSchema = z.enum(['queued', 'transferring']);
+export type TransferQueueFileStatus = z.infer<typeof TransferQueueFileStatusSchema>;
+
+export const TransferQueueFileSchema = z.object({
+  key: z.string(),
+  clipName: z.string().default(''),
+  relPath: z.string(),
+  status: TransferQueueFileStatusSchema.default('queued'),
+  isSymlink: z.boolean().default(true),
+  ageSec: z.number().default(0),
+  sourceSnapshotId: z.string(),
+  sourceRootPath: z.string(),
+  sourceSnapshotCreatedAt: z.number().default(0),
+  updatedAt: z.number(),
+});
+
+export type TransferQueueFile = z.infer<typeof TransferQueueFileSchema>;
+
+export const TransferQueueSchema = z.object({
+  updatedAt: z.number(),
+  files: z.array(TransferQueueFileSchema).default([]),
+});
+
+export type TransferQueue = z.infer<typeof TransferQueueSchema>;
+
 export const TransferFileProgressSchema = z.object({
   path: z.string(),
   status: TransferFileStatusSchema.default('queued'),

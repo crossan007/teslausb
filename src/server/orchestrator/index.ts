@@ -15,6 +15,7 @@ import { BackingImageChangeDetector } from './backing-image-change-detector';
 import { SnapshotManager } from './snapshot-manager';
 import { SnapshotEventCoordinator } from './snapshot-event-coordinator';
 import { ArchiveEventBus, PushMessageEventHandler, TeslaApiInteropEventHandler } from './events';
+import { TransferQueueManager } from './transfer-queue-manager';
 
 export interface OrchestratorContext {
   eventBus: ArchiveEventBus;
@@ -126,6 +127,9 @@ export async function startOrchestrator(config: TeslaUSBConfig): Promise<Orchest
   });
   const discovery = new ClipDiscoveryManager();
   const clipArchiveCoordinator = new ClipArchiveCoordinator(backend, undefined, undefined, stateManager);
+  const transferQueueManager = new TransferQueueManager({
+    persistQueue: (queue) => stateManager.writeTransferQueue(queue),
+  });
   const discoveryConsumer = new SnapshotDiscoveryConsumer(discovery, {
     archivedListPath: ARCHIVED_LIST_PATH,
     includeSavedclips: config.archiveSavedclips,
@@ -149,6 +153,7 @@ export async function startOrchestrator(config: TeslaUSBConfig): Promise<Orchest
     undefined,
     {
       eventBus,
+      transferQueueManager,
     },
   );
 

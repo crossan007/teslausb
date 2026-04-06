@@ -137,6 +137,15 @@ export class WebServer {
       },
     );
 
+    this.app.get('/api/transfer-queue', (_req: Request, res: Response) => {
+      try {
+        res.json(this.transferSessionView.getTransferQueueSnapshot());
+      } catch (error) {
+        logger.warn({ err: error }, 'Failed to read transfer queue');
+        res.status(500).json({ error: 'Failed to read transfer queue' });
+      }
+    });
+
     // Snapshots list
     this.app.get('/api/snapshots', (_req: Request, res: Response) => {
       try {

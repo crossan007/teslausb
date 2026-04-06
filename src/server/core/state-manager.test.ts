@@ -3,7 +3,7 @@ import { StateManager } from './state-manager';
 import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { SyncStatus, Snapshot, PendingClips, OperationResult, TransferSession } from '../../types';
+import { SyncStatus, Snapshot, PendingClips, OperationResult, TransferQueue, TransferSession } from '../../types';
 
 describe('StateManager', () => {
   let stateManager: StateManager;
@@ -234,6 +234,34 @@ describe('StateManager', () => {
       expect(read?.sessionId).toBe('session-1');
       expect(read?.filesTotal).toBe(2);
       expect(read?.files[0].status).toBe('transferring');
+    });
+  });
+
+  describe('TransferQueue', () => {
+    it('writes and reads transfer queue', () => {
+      const queue: TransferQueue = {
+        updatedAt: Date.now(),
+        files: [
+          {
+            key: 'b2s:abc',
+            clipName: 'a.mp4',
+            relPath: 'SavedClips/a.mp4',
+            status: 'queued',
+            isSymlink: true,
+            ageSec: 12,
+            sourceSnapshotId: 'snap-1',
+            sourceRootPath: '/snapshots/snap-1/mnt/TeslaCam',
+            sourceSnapshotCreatedAt: 100,
+            updatedAt: Date.now(),
+          },
+        ],
+      };
+
+      stateManager.writeTransferQueue(queue);
+      const read = stateManager.readTransferQueue();
+
+      expect(read).toEqual(queue);
+      expect(read?.files[0].sourceSnapshotId).toBe('snap-1');
     });
   });
 

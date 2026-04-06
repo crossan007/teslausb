@@ -7,6 +7,7 @@ import { Dirent } from 'fs';
 import { mkdir, opendir, readFile, stat, lstat, writeFile } from 'fs/promises';
 import { dirname, posix as posixPath } from 'path';
 import { PendingClips, Snapshot } from '../../types';
+import { blake2s256 } from '../shared';
 
 const DEFAULT_MIN_CLIP_SIZE_BYTES = 100_000;
 const DEFAULT_STAT_CONCURRENCY = 32;
@@ -26,6 +27,7 @@ export interface ClipDiscoveryOptions {
 
 export interface ClipDiscoveryResult {
   rootPath: string;
+  clips: ClipMetadata[];
   filePaths: string[];
   pendingClips: PendingClips;
   candidatesDiscovered: number;
@@ -39,8 +41,11 @@ interface ClipCategoryConfig {
   enabled: boolean;
 }
 
-interface ClipMetadata {
+export interface ClipMetadata {
+  key: string;
+  fileName: string;
   relPath: string;
+  absPath: string;
   ageSec: number;
   isSymlink: boolean;
 }
@@ -78,6 +83,7 @@ export class ClipDiscoveryManager {
 
     return {
       rootPath: options.rootPath,
+      clips: metadata,
       filePaths: metadata.map((entry) => entry.relPath),
       pendingClips: {
         totalFiles: metadata.length,
@@ -226,7 +232,14 @@ export class ClipDiscoveryManager {
       }
 
       const ageSec = Math.max(0, nowEpochSec - Math.floor(fileStats.mtimeMs / 1000));
-      return { relPath, ageSec, isSymlink };
+      return {
+        key: `b2s:${blake2s256(relPath)}`,
+        fileName: posixPath.basename(relPath),
+        relPath,
+        absPath,
+        ageSec,
+        isSymlink,
+      };
     };
 
     const worker = async (): Promise<void> => {

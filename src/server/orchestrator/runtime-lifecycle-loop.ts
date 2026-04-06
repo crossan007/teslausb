@@ -10,6 +10,7 @@ import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-mana
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend } from '../../types/archive';
 import { ArchiveEventBus, ArchiveEventBusLike } from './events';
+import { TransferQueueManager } from './transfer-queue-manager';
 
 /**
  * Structural contract expected from any discovery source (snapshot consumer, test fake, etc.).
@@ -70,6 +71,8 @@ export class RuntimeLifecycleLoop {
   private readonly runtimeLogger: RuntimeLifecycleLogger;
   /** Event bus used to emit lifecycle events. */
   private readonly eventBus: ArchiveEventBusLike;
+  /** Queue manager owning dedupe/remap and snapshot release. */
+  private readonly transferQueueManager: TransferQueueManager;
 
   /**
    * Builds a runtime lifecycle loop instance.
@@ -85,11 +88,13 @@ export class RuntimeLifecycleLoop {
       syncStatusWriter?: SyncStatusWriter;
       runtimeLogger?: RuntimeLifecycleLogger;
       eventBus?: ArchiveEventBusLike;
+      transferQueueManager?: TransferQueueManager;
     },
   ) {
     this.syncStatusWriter = dependencies?.syncStatusWriter ?? stateManager;
     this.runtimeLogger = dependencies?.runtimeLogger ?? logger;
     this.eventBus = dependencies?.eventBus ?? new ArchiveEventBus();
+    this.transferQueueManager = dependencies?.transferQueueManager ?? new TransferQueueManager();
   }
 
   /**
@@ -131,6 +136,99 @@ export class RuntimeLifecycleLoop {
    * Handles one discovered clip batch through lifecycle hooks and archive execution.
    */
   private async handleDiscovery(discoveryResult: ClipDiscoveryResult): Promise<void> {
+    if (!discoveryResult.snapshot) {
+      await this.handleDirectBatch(discoveryResult);
+      return;
+    }
+
+    await this.transferQueueManager.ingestDiscovery(discoveryResult);
+    await this.drainTransferQueue();
+  }
+
+  /**
+   * Continuously processes queued clips one-at-a-time until queue is empty.
+   */
+  private async drainTransferQueue(): Promise<void> {
+    while (true) {
+      const nextClip = this.transferQueueManager.nextQueuedClip();
+      if (!nextClip) {
+        return;
+      }
+
+      const pending = this.buildPendingFromQueue();
+      const reachable = await this.waitUntilReachable(pending);
+      if (!reachable) {
+        return;
+      }
+
+      await this.trySyncTime();
+      this.transferQueueManager.markTransferring([{ key: nextClip.key }]);
+
+      await this.eventBus.publish({
+        type: 'archive-start',
+        occurredAtMs: Date.now(),
+        totalFiles: 1,
+        totalEvents: 0,
+        triggerFilePaths: this.options.startTriggerFilePaths ?? [],
+      });
+      await this.sleepMs(Math.max(0, this.options.archiveDelaySec) * 1000);
+
+      let cycleSucceeded = false;
+      let archivedMarkedCount = 0;
+
+      try {
+        let cycleResult;
+        try {
+          cycleResult = await this.clipArchiveCoordinator.runArchiveCycle({
+            fromPath: nextClip.sourceRootPath,
+            files: [nextClip.relPath],
+          });
+          cycleSucceeded = Boolean(cycleResult && !cycleResult.skipped && cycleResult.failed === 0);
+        } catch (error) {
+          this.runtimeLogger.error({ err: error }, 'Archive cycle failed for queued clip');
+        }
+
+        const archivedNowPaths = await this.discoveryManager.resolveArchivedFromSource(
+          nextClip.sourceRootPath,
+          [nextClip.relPath],
+        );
+        const archived = archivedNowPaths.includes(nextClip.relPath);
+
+        if (cycleSucceeded && archived) {
+          archivedMarkedCount = 1;
+          await this.discoveryManager.markArchived([nextClip.relPath], this.options.archivedListPath);
+          await this.transferQueueManager.markCompleted([{ key: nextClip.key }]);
+        } else {
+          this.transferQueueManager.resetToQueued([{ key: nextClip.key }]);
+          this.runtimeLogger.info(
+            { relPath: nextClip.relPath, cycleSucceeded, archived },
+            'Queued clip transfer did not complete; leaving in queue',
+          );
+          return;
+        }
+
+        this.runtimeLogger.info(
+          { archivedMarked: archivedMarkedCount, cycleSucceeded, result: cycleResult, relPath: nextClip.relPath },
+          'Archive cycle completed for queued clip',
+        );
+      } finally {
+        await this.eventBus.publish({
+          type: 'archive-finish',
+          occurredAtMs: Date.now(),
+          totalFiles: 1,
+          totalEvents: 0,
+          archivedFiles: archivedMarkedCount,
+          succeeded: cycleSucceeded,
+          triggerFilePaths: cycleSucceeded ? (this.options.finishTriggerFilePaths ?? []) : [],
+        });
+      }
+    }
+  }
+
+  /**
+   * Legacy-compatible processing path for direct discovery batches without snapshot metadata.
+   */
+  private async handleDirectBatch(discoveryResult: ClipDiscoveryResult): Promise<void> {
     const reachable = await this.waitUntilReachable(discoveryResult.pendingClips);
     if (!reachable) {
       return;
@@ -158,7 +256,7 @@ export class RuntimeLifecycleLoop {
         });
         cycleSucceeded = Boolean(cycleResult && !cycleResult.skipped && cycleResult.failed === 0);
       } catch (error) {
-        this.runtimeLogger.error({ err: error }, 'Archive cycle failed for discovery batch');
+        this.runtimeLogger.error({ err: error }, 'Archive cycle failed for direct discovery batch');
       }
 
       const archivedNow = await this.discoveryManager.resolveArchivedFromSource(
@@ -178,7 +276,10 @@ export class RuntimeLifecycleLoop {
         );
       }
 
-      this.runtimeLogger.info({ archivedMarked: archivedMarkedCount, cycleSucceeded, result: cycleResult }, 'Archive cycle completed from lifecycle loop');
+      this.runtimeLogger.info(
+        { archivedMarked: archivedMarkedCount, cycleSucceeded, result: cycleResult },
+        'Archive cycle completed from direct discovery batch',
+      );
     } finally {
       await this.eventBus.publish({
         type: 'archive-finish',
@@ -189,25 +290,26 @@ export class RuntimeLifecycleLoop {
         succeeded: cycleSucceeded,
         triggerFilePaths: cycleSucceeded ? (this.options.finishTriggerFilePaths ?? []) : [],
       });
-      await this.cleanupProcessedSnapshot(discoveryResult);
     }
   }
 
   /**
-   * Releases snapshot artifacts after the associated discovery batch has been processed.
+   * Builds sync status pending summary from queued transfer files.
    */
-  private async cleanupProcessedSnapshot(discoveryResult: ClipDiscoveryResult): Promise<void> {
-    const snapshot = discoveryResult.snapshot;
-    if (!snapshot?.release) {
-      return;
-    }
+  private buildPendingFromQueue(): PendingClips {
+    const queue = this.transferQueueManager.snapshot();
+    const oldestAgeSec = queue.files.reduce((oldest, file) => Math.max(oldest, file.ageSec), 0);
 
-    try {
-      await snapshot.release();
-      this.runtimeLogger.info({ snapshotId: snapshot.id, rootPath: discoveryResult.rootPath }, 'Released processed snapshot');
-    } catch (error) {
-      this.runtimeLogger.warn({ err: error, snapshotId: snapshot.id, rootPath: discoveryResult.rootPath }, 'Failed to release processed snapshot');
-    }
+    return {
+      totalFiles: queue.files.length,
+      totalEvents: 0,
+      oldestAgeSec,
+      files: queue.files.map((file) => ({
+        relPath: file.relPath,
+        isSymlink: file.isSymlink,
+        ageSec: file.ageSec,
+      })),
+    };
   }
 
   /**

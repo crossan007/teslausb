@@ -3,6 +3,7 @@ import { PendingClips, Snapshot } from '../../types';
 import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
 import { SnapshotDiscoveryConsumer } from './snapshot-discovery-consumer';
 import { ArchiveEvent } from './events';
+import { blake2s256 } from '../shared';
 
 type BusSubscriber = (event: ArchiveEvent) => Promise<void>;
 
@@ -44,8 +45,18 @@ function makePending(filePaths: string[]): PendingClips {
 }
 
 function makeResult(rootPath: string, filePaths: string[]): ClipDiscoveryResult {
+  const clips = filePaths.map((filePath) => ({
+    key: `b2s:${blake2s256(filePath)}`,
+    fileName: filePath.split('/').at(-1) ?? filePath,
+    relPath: filePath,
+    absPath: `${rootPath}/${filePath}`,
+    ageSec: 0,
+    isSymlink: true,
+  }));
+
   return {
     rootPath,
+    clips,
     filePaths,
     pendingClips: makePending(filePaths),
     candidatesDiscovered: filePaths.length,

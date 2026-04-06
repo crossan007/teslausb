@@ -17,6 +17,8 @@ import {
   PendingClipsSchema,
   TransferSession,
   TransferSessionSchema,
+  TransferQueue,
+  TransferQueueSchema,
 } from '../../types';
 import { ensureDir } from '../shared';
 
@@ -311,6 +313,44 @@ export class StateManager {
       logger.debug({ sessionId: session.sessionId, phase: session.phase }, 'Transfer session written');
     } catch (error) {
       logger.error({ err: error, sessionId: session.sessionId }, 'Failed to write transfer session');
+      throw error;
+    }
+  }
+
+  /**
+   * Read current transfer queue.
+   */
+  readTransferQueue(): TransferQueue | null {
+    try {
+      const path = this.statePath('transfer_queue');
+      if (!existsSync(path)) {
+        return null;
+      }
+      const content = readFileSync(path, 'utf-8');
+      const data = JSON.parse(content);
+      const parsed = TransferQueueSchema.safeParse(data);
+      if (!parsed.success) {
+        logger.warn({ issues: parsed.error.issues }, 'Invalid TransferQueue format');
+        return null;
+      }
+      return parsed.data;
+    } catch (error) {
+      logger.warn({ error }, 'Failed to read transfer queue');
+      return null;
+    }
+  }
+
+  /**
+   * Write current transfer queue.
+   */
+  writeTransferQueue(queue: TransferQueue): void {
+    try {
+      const path = this.statePath('transfer_queue');
+      ensureDir(dirname(path));
+      writeFileSync(path, JSON.stringify(queue, null, 2), 'utf-8');
+      logger.debug({ files: queue.files.length }, 'Transfer queue written');
+    } catch (error) {
+      logger.error({ err: error }, 'Failed to write transfer queue');
       throw error;
     }
   }

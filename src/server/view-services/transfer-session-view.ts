@@ -1,7 +1,7 @@
 import { TransferSessionView, FileTransferProgress } from './types';
 import { BaseViewService } from './base-view-service';
 import { ArchiveEventBusLike } from '../orchestrator/events';
-import { PendingClips, TransferSession } from '../../types';
+import { PendingClips, TransferQueue, TransferSession } from '../../types';
 
 /**
  * Tracks current transferring batch and file-level progress
@@ -49,6 +49,29 @@ export class TransferSessionViewService extends BaseViewService<TransferSessionV
       this.fileProgress.set(file.relPath, {
         ...file,
         status: 'pending',
+      });
+    }
+
+    this.emit();
+  }
+
+  /**
+   * Applies queue-centric transfer state persisted by the orchestrator.
+   */
+  applyTransferQueue(queue: TransferQueue): void {
+    this.currentSession.totalFilesInBatch = queue.files.length;
+    this.currentSession.isActive = queue.files.some((file) => file.status === 'transferring');
+
+    this.fileProgress.clear();
+    for (const file of queue.files) {
+      const status: FileTransferProgress['status'] =
+        file.status === 'transferring' ? 'transferring' : 'pending';
+
+      this.fileProgress.set(file.relPath, {
+        relPath: file.relPath,
+        isSymlink: file.isSymlink,
+        ageSec: file.ageSec,
+        status,
       });
     }
 
@@ -159,7 +182,6 @@ export class TransferSessionViewService extends BaseViewService<TransferSessionV
     this.currentSession.startedAtEpoch = session.startedAt;
     this.currentSession.overallProgressPercent = session.batchPercent ?? this.currentSession.overallProgressPercent;
 
-    this.fileProgress.clear();
     for (const file of session.files) {
       const status: FileTransferProgress['status'] =
         file.status === 'completed'
@@ -170,15 +192,25 @@ export class TransferSessionViewService extends BaseViewService<TransferSessionV
               ? 'failed'
               : 'pending';
 
+      const existing = this.fileProgress.get(file.path);
       this.fileProgress.set(file.path, {
         relPath: file.path,
-        isSymlink: true,
-        ageSec: 0,
+        isSymlink: existing?.isSymlink ?? true,
+        ageSec: existing?.ageSec ?? 0,
         status,
         totalBytes: file.totalBytes,
         transferredBytes: file.bytesTransferred,
         progressPercent: file.percent,
       });
+    }
+
+    for (const [relPath, file] of this.fileProgress.entries()) {
+      if (!session.files.some((sessionFile) => sessionFile.path === relPath)) {
+        this.fileProgress.set(relPath, {
+          ...file,
+          status: file.status === 'transferring' ? 'pending' : file.status,
+        });
+      }
     }
 
     const currentFilePath = session.currentFilePath;
@@ -187,13 +219,16 @@ export class TransferSessionViewService extends BaseViewService<TransferSessionV
     this.emit();
   }
 
+  getTransferQueueSnapshot(): FileTransferProgress[] {
+    return this.getAllFilesProgress();
+  }
+
   private handleArchiveStart(totalFiles: number): void {
     this.currentSession.isActive = true;
     this.currentSession.totalFilesInBatch = totalFiles;
     this.currentSession.filesCompleted = 0;
     this.currentSession.filesFailed = 0;
     this.currentSession.startedAtEpoch = Math.floor(Date.now() / 1000);
-    this.fileProgress.clear();
     this.emit();
   }
 

@@ -7,6 +7,7 @@ import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-mana
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend } from '../../types/archive';
 import { ArchiveEvent } from './events';
+import { blake2s256 } from '../shared';
 
 class FakeCommandRunner implements CommandRunner {
   readonly calls: Array<{ command: string; args: string[] }> = [];
@@ -133,6 +134,17 @@ function snapshotWithRelease(snapshotId: string, release: () => Promise<void>): 
   };
 }
 
+function clip(relPath: string, rootPath: string) {
+  return {
+    key: `b2s:${blake2s256(relPath)}`,
+    fileName: 'file.mp4',
+    relPath,
+    absPath: `${rootPath}/${relPath}`,
+    ageSec: 10,
+    isSymlink: true,
+  };
+}
+
 describe('RuntimeLifecycleLoop', () => {
   it('waits for reachability and processes archive batch with lifecycle hooks', async () => {
     const discoveryLoop = new FakeDiscoveryLoop();
@@ -177,9 +189,12 @@ describe('RuntimeLifecycleLoop', () => {
     );
 
     loop.start();
+    const rootPath = '/backingfiles/snapshots/snap-000001/mnt/TeslaCam';
+    const relPath = 'SavedClips/evt1/file.mp4';
     discoveryLoop.subject.next({
-      rootPath: '/backingfiles/snapshots/snap-000001/mnt/TeslaCam',
-      filePaths: ['SavedClips/evt1/file.mp4'],
+      rootPath,
+      clips: [clip(relPath, rootPath)],
+      filePaths: [relPath],
       pendingClips: pending(),
       candidatesDiscovered: 1,
       candidatesFiltered: 0,
@@ -235,9 +250,12 @@ describe('RuntimeLifecycleLoop', () => {
     );
 
     loop.start();
+    const rootPath = '/backingfiles/snapshots/snap-000001/mnt/TeslaCam';
+    const relPath = 'SavedClips/evt1/file.mp4';
     discoveryLoop.subject.next({
-      rootPath: '/backingfiles/snapshots/snap-000001/mnt/TeslaCam',
-      filePaths: ['SavedClips/evt1/file.mp4'],
+      rootPath,
+      clips: [clip(relPath, rootPath)],
+      filePaths: [relPath],
       pendingClips: pending(),
       candidatesDiscovered: 1,
       candidatesFiltered: 0,

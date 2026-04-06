@@ -74,6 +74,11 @@ export class WebServerIntegration {
         this.transferSessionView.setPendingClips(pending);
       }
 
+      const transferQueue = stateManager.readTransferQueue();
+      if (transferQueue) {
+        this.transferSessionView.applyTransferQueue(transferQueue);
+      }
+
       const transferSession = stateManager.readTransferSession();
       if (transferSession) {
         this.transferSessionView.applyTransferSession(transferSession);

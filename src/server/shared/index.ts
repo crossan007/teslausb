@@ -6,3 +6,4 @@ export {
 	ChildProcessCommandRunner,
 	defaultCommandRunner,
 } from './command-runner';
+export { blake2s256 } from './hash';
