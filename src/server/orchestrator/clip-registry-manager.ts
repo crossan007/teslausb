@@ -1,5 +1,6 @@
 import { ClipRegistry, ClipRegistryEntry, Snapshot, TransferQueue, TransferQueueFile } from '../../types';
 import { ClipDiscoveryResult } from './clip-discovery-manager';
+import { logger } from '../core';
 
 interface SnapshotRef {
   snapshot: Snapshot;
@@ -31,10 +32,13 @@ export class ClipRegistryManager {
     this.ensureSnapshotRef(snapshot);
 
     const now = Date.now();
+    let inserted = 0;
+    let updated = 0;
     for (const clip of result.clips) {
       const existing = this.entriesByKey.get(clip.key);
 
       if (!existing) {
+        inserted += 1;
         this.entriesByKey.set(clip.key, {
           key: clip.key,
           clipName: clip.fileName,
@@ -53,6 +57,7 @@ export class ClipRegistryManager {
         continue;
       }
 
+      updated += 1;
       existing.clipName = clip.fileName;
       existing.ageSec = clip.ageSec;
       existing.isSymlink = clip.isSymlink;
@@ -71,6 +76,18 @@ export class ClipRegistryManager {
 
     await this.releaseSnapshotsIfEligible();
     this.persist();
+    logger.info(
+      {
+        snapshotId: snapshot.id,
+        discovered: result.clips.length,
+        inserted,
+        updated,
+        unresolvedFirstSeenForSnapshot: this.unresolvedCountForFirstSeenSnapshot(snapshot.id),
+        firstSeenCountForSnapshot: this.countFirstSeenForSnapshot(snapshot.id),
+        registryEntriesTotal: this.entriesByKey.size,
+      },
+      'Clip registry ingest applied',
+    );
   }
 
   nextClipForTransfer(): ClipRegistryEntry | undefined {
@@ -189,6 +206,16 @@ export class ClipRegistryManager {
     let count = 0;
     for (const entry of this.entriesByKey.values()) {
       if (entry.firstSeenSnapshotId === snapshotId && entry.status !== 'transferred') {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  private countFirstSeenForSnapshot(snapshotId: string): number {
+    let count = 0;
+    for (const entry of this.entriesByKey.values()) {
+      if (entry.firstSeenSnapshotId === snapshotId) {
         count += 1;
       }
     }
