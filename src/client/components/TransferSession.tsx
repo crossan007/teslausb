@@ -5,6 +5,8 @@ import {
   TransferSessionView,
 } from '../../server/view-services/types';
 
+const ACTIVE_FILE_GRACE_MS = 2500;
+
 interface Props {
   wsMessage?: any;
   wsConnected: boolean;
@@ -77,6 +79,7 @@ function statusRank(status: 'pending' | 'transferring' | 'archived' | 'failed'):
 export default function TransferSessionComponent({ wsMessage, wsConnected }: Props) {
   const [wsSession, setWsSession] = useState<TransferSessionView | null>(null);
   const [wsQueue, setWsQueue] = useState<FileTransferProgress[] | null>(null);
+  const [lastActiveFile, setLastActiveFile] = useState<{ file: FileTransferProgress; seenAt: number } | null>(null);
 
   const { data: restData } = useApi<TransferSessionView>(
     '/api/transfer-session',
@@ -140,12 +143,34 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
       });
   }, [transferFiles, session]);
 
-  const activeFile = session?.isActive
-    ? (
-      allQueueFiles.find((file) => file.status === 'transferring') ??
-      session.currentFile
-    )
-    : undefined;
+  const activeCandidate =
+    allQueueFiles.find((file) => file.status === 'transferring') ??
+    (session?.isActive ? session.currentFile : undefined);
+
+  useEffect(() => {
+    if (!activeCandidate) {
+      return;
+    }
+
+    setLastActiveFile({
+      file: activeCandidate,
+      seenAt: Date.now(),
+    });
+  }, [activeCandidate]);
+
+  const activeFile = useMemo(() => {
+    if (activeCandidate) {
+      return activeCandidate;
+    }
+
+    if (lastActiveFile && Date.now() - lastActiveFile.seenAt <= ACTIVE_FILE_GRACE_MS) {
+      return lastActiveFile.file;
+    }
+
+    return undefined;
+  }, [activeCandidate, lastActiveFile]);
+
+  const effectiveIsActive = Boolean(session?.isActive || activeFile);
 
   const queuedFiles = allQueueFiles.filter((file) => file.status === 'pending');
   const queueDepth = queuedFiles.length;
@@ -160,7 +185,7 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
   }
 
   let elapsedText: string | undefined;
-  if (session.startedAtEpoch && session.isActive) {
+  if (session.startedAtEpoch && effectiveIsActive) {
     const startedAtSeconds = normalizeEpochSeconds(session.startedAtEpoch);
     if (startedAtSeconds !== undefined) {
       const elapsedSeconds = Math.max(0, Math.floor(Date.now() / 1000) - startedAtSeconds);
@@ -174,8 +199,8 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
         <h2>Transfer Queue</h2>
         <div className="transfer-header-status">
           <span className="queue-depth">Depth: {queueDepth}</span>
-          <strong className={session.isActive ? 'status-active' : 'status-idle'}>
-            {session.isActive ? '🔄 Transferring' : '⏸️ Idle'}
+          <strong className={effectiveIsActive ? 'status-active' : 'status-idle'}>
+            {effectiveIsActive ? '🔄 Transferring' : '⏸️ Idle'}
           </strong>
           {elapsedText && (
             <span className="session-time">
