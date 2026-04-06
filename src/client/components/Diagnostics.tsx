@@ -199,6 +199,12 @@ export default function DiagnosticsComponent() {
   const firstSeenRows = topRows(data.snapshots.firstSeen);
   const preferredRows = topRows(data.snapshots.preferred);
   const recentRows = data.recentSamples.byFirstSeenAtDesc.slice(0, 8);
+  const hasStartupRecoveryToClear = Boolean(
+    data.runtime.startupRecovery && (
+      data.runtime.startupRecovery.transferSessionRecovered ||
+      data.runtime.startupRecovery.clipRegistryRecoveredTransferring > 0
+    ),
+  );
 
   return (
     <div className="panel diagnostics">
@@ -266,9 +272,11 @@ export default function DiagnosticsComponent() {
       <div className="diag-section">
         <div className="diag-section-title-row">
           <h3>Startup Recovery</h3>
-          <button type="button" className="diag-copy-btn" onClick={clearStartupRecovery}>
-            Clear
-          </button>
+          {hasStartupRecoveryToClear && (
+            <button type="button" className="diag-copy-btn" onClick={clearStartupRecovery}>
+              Clear
+            </button>
+          )}
         </div>
         {!data.runtime.startupRecovery ? (
           <p className="diag-empty">No startup recovery record.</p>
