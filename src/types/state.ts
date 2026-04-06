@@ -71,8 +71,10 @@ export type PendingClips = z.infer<typeof PendingClipsSchema>;
  */
 export const NetworkHealthSampleSchema = z.object({
   timestampMs: z.number(),
-  pingMs: z.number().optional(),
-  packetLoss: z.number().optional(),
+  pingUnloadedMs: z.number().optional(),
+  packetLossUnloaded: z.number().optional(),
+  pingLoadedMs: z.number().optional(),
+  packetLossLoaded: z.number().optional(),
 });
 
 export type NetworkHealthSample = z.infer<typeof NetworkHealthSampleSchema>;
@@ -97,6 +99,10 @@ export const SystemStatusSchema = z.object({
   wifiIp: z.string().optional(),
   pingTimeMs: z.number().optional(), // milliseconds to default gateway
   packetLoss: z.number().optional(), // percentage
+  pingUnloadedMs: z.number().optional(), // milliseconds to default-size ping
+  packetLossUnloaded: z.number().optional(), // percentage for default-size ping
+  pingLoadedMs: z.number().optional(), // milliseconds to larger packet ping
+  packetLossLoaded: z.number().optional(), // percentage for larger packet ping
   networkHealthHistory: z.array(NetworkHealthSampleSchema).default([]),
 });
 

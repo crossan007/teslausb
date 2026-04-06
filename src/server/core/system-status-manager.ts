@@ -21,7 +21,7 @@ export interface SystemStatusManagerOptions {
 export class SystemStatusManager {
   private readonly snapshotManager?: SnapshotManager;
   private readonly defaultGateway: string;
-  private readonly pingPacketSize: number;
+  private readonly loadedPingPacketSize: number;
   private readonly thermalZonePath: string;
   private readonly commandRunner: CommandRunner;
   private readonly networkHealthPollMs: number;
@@ -32,7 +32,7 @@ export class SystemStatusManager {
   constructor(options: SystemStatusManagerOptions = {}) {
     this.snapshotManager = options.snapshotManager;
     this.defaultGateway = options.defaultGateway ?? '192.168.1.1';
-    this.pingPacketSize = options.pingPacketSize ?? 1024;
+    this.loadedPingPacketSize = options.pingPacketSize ?? 1400;
     this.thermalZonePath = options.thermalZonePath ?? '/sys/class/thermal/thermal_zone0/temp';
     this.commandRunner = options.commandRunner ?? defaultCommandRunner;
     this.networkHealthPollMs = Math.max(1000, options.networkHealthPollMs ?? 60_000);
@@ -64,8 +64,12 @@ export class SystemStatusManager {
         freeSpace: diskUsage?.free ?? 0,
         numSnapshots,
         cpuTempC: cpuTemp ?? undefined,
-        pingTimeMs: latestNetworkHealth?.pingMs,
-        packetLoss: latestNetworkHealth?.packetLoss,
+        pingTimeMs: latestNetworkHealth?.pingUnloadedMs,
+        packetLoss: latestNetworkHealth?.packetLossUnloaded,
+        pingUnloadedMs: latestNetworkHealth?.pingUnloadedMs,
+        packetLossUnloaded: latestNetworkHealth?.packetLossUnloaded,
+        pingLoadedMs: latestNetworkHealth?.pingLoadedMs,
+        packetLossLoaded: latestNetworkHealth?.packetLossLoaded,
         networkHealthHistory: history,
       };
 
@@ -114,59 +118,80 @@ export class SystemStatusManager {
   }
 
   private async getNetworkHealth(): Promise<{
-    pingMs: number;
-    packetLoss: number;
-  } | null> {
+    pingUnloadedMs?: number;
+    packetLossUnloaded?: number;
+    pingLoadedMs?: number;
+    packetLossLoaded?: number;
+  }> {
     try {
       const gateway = await this.getEffectiveGateway();
 
-      // Bound ping latency so /api/system-status stays responsive even when gateway is unreachable.
-      // -n: numeric output (no reverse DNS)
-      // -c 2: two probes
-      // -W 1: one-second per-reply timeout
-      // -w 3: three-second overall deadline
-      const result = await this.commandRunner.run('ping', [
-        '-n',
-        '-c',
-        '2',
-        '-s',
-        String(this.pingPacketSize),
-        '-W',
-        '1',
-        '-w',
-        '3',
-        gateway,
-      ], {
-        timeout: 4000,
-      });
+      const unloaded = await this.measurePing(gateway);
+      const loaded = await this.measurePing(gateway, this.loadedPingPacketSize);
 
-      if (result.code !== 0) {
-        logger.debug({ gateway }, 'Ping failed');
-        return null;
+      if (!unloaded && !loaded) {
+        logger.debug({ gateway }, 'All ping probes failed');
       }
-
-      // Parse ping output for min/avg/max/stddev and packet loss
-      // Format: "round-trip min/avg/max/stddev = X.XXX/Y.YYY/Z.ZZZ/W.WWW ms"
-      const rtMatch = result.stdout.match(
-        /min\/avg\/max\/[a-z]+\s*=\s*([\d.]+)\/([\d.]+)\/([\d.]+)/i,
-      );
-      const lossMatch = result.stdout.match(/(\d+(?:\.\d+)?)%\s+packet loss/i);
-
-      if (!rtMatch) {
-        return null;
-      }
-
-      const avgMs = parseFloat(rtMatch[2]);
-      const packetLoss = lossMatch ? parseFloat(lossMatch[1]) : 0;
 
       return {
-        pingMs: Math.round(avgMs * 100) / 100,
-        packetLoss: Math.round(packetLoss * 100) / 100,
+        pingUnloadedMs: unloaded?.pingMs,
+        packetLossUnloaded: unloaded?.packetLoss,
+        pingLoadedMs: loaded?.pingMs,
+        packetLossLoaded: loaded?.packetLoss,
       };
     } catch (error) {
       logger.debug({ err: error }, 'Failed to measure network health');
+      return {};
+    }
+  }
+
+  private async measurePing(
+    gateway: string,
+    packetSize?: number,
+  ): Promise<{ pingMs: number; packetLoss: number } | null> {
+    // Bound ping latency so /api/system-status stays responsive even when gateway is unreachable.
+    // -n: numeric output (no reverse DNS)
+    // -c 2: two probes
+    // -W 1: one-second per-reply timeout
+    // -w 3: three-second overall deadline
+    const args = [
+      '-n',
+      '-c',
+      '2',
+    ];
+
+    if (packetSize !== undefined) {
+      args.push('-s', String(packetSize));
+    }
+
+    args.push('-W', '1', '-w', '3', gateway);
+
+    const result = await this.commandRunner.run('ping', args, {
+      timeout: 4000,
+    });
+
+    if (result.code !== 0) {
       return null;
     }
+
+    // Parse ping output for min/avg/max/stddev and packet loss
+    // Format: "round-trip min/avg/max/stddev = X.XXX/Y.YYY/Z.ZZZ/W.WWW ms"
+    const rtMatch = result.stdout.match(
+      /min\/avg\/max\/[a-z]+\s*=\s*([\d.]+)\/([\d.]+)\/([\d.]+)/i,
+    );
+    const lossMatch = result.stdout.match(/(\d+(?:\.\d+)?)%\s+packet loss/i);
+
+    if (!rtMatch) {
+      return null;
+    }
+
+    const avgMs = parseFloat(rtMatch[2]);
+    const packetLoss = lossMatch ? parseFloat(lossMatch[1]) : 0;
+
+    return {
+      pingMs: Math.round(avgMs * 100) / 100,
+      packetLoss: Math.round(packetLoss * 100) / 100,
+    };
   }
 
   private async getEffectiveGateway(): Promise<string> {
@@ -222,8 +247,10 @@ export class SystemStatusManager {
       const measured = await this.getNetworkHealth();
       this.networkHealthHistory.push({
         timestampMs: Date.now(),
-        pingMs: measured?.pingMs,
-        packetLoss: measured?.packetLoss,
+        pingUnloadedMs: measured.pingUnloadedMs,
+        packetLossUnloaded: measured.packetLossUnloaded,
+        pingLoadedMs: measured.pingLoadedMs,
+        packetLossLoaded: measured.packetLossLoaded,
       });
 
       if (this.networkHealthHistory.length > this.networkHealthHistorySize) {

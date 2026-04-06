@@ -51,10 +51,15 @@ describe('SystemStatusManager', () => {
     expect(status?.totalSpace).toBeGreaterThanOrEqual(0);
     expect(status?.freeSpace).toBeGreaterThanOrEqual(0);
     expect(status?.numSnapshots).toBeGreaterThanOrEqual(0);
-    expect(status?.pingTimeMs).toBeGreaterThan(0);
-    expect(status?.packetLoss).toBe(0);
+    expect(status?.pingUnloadedMs).toBeGreaterThan(0);
+    expect(status?.packetLossUnloaded).toBe(0);
+    expect(status?.pingLoadedMs).toBeGreaterThan(0);
+    expect(status?.packetLossLoaded).toBe(0);
+    expect(status?.pingTimeMs).toBe(status?.pingUnloadedMs);
+    expect(status?.packetLoss).toBe(status?.packetLossUnloaded);
     expect(status?.networkHealthHistory.length).toBe(1);
-    expect(status?.networkHealthHistory[0].pingMs).toBeGreaterThan(0);
+    expect(status?.networkHealthHistory[0].pingUnloadedMs).toBeGreaterThan(0);
+    expect(status?.networkHealthHistory[0].pingLoadedMs).toBeGreaterThan(0);
   });
 
   it('returns status with nullish network fields when ping fails', async () => {
@@ -84,9 +89,14 @@ describe('SystemStatusManager', () => {
     const status = await manager.readSystemStatus();
 
     expect(status).not.toBeNull();
+    expect(status?.pingUnloadedMs).toBeUndefined();
+    expect(status?.packetLossUnloaded).toBeUndefined();
+    expect(status?.pingLoadedMs).toBeUndefined();
+    expect(status?.packetLossLoaded).toBeUndefined();
     expect(status?.pingTimeMs).toBeUndefined();
     expect(status?.packetLoss).toBeUndefined();
     expect(status?.networkHealthHistory.length).toBe(1);
-    expect(status?.networkHealthHistory[0].pingMs).toBeUndefined();
+    expect(status?.networkHealthHistory[0].pingUnloadedMs).toBeUndefined();
+    expect(status?.networkHealthHistory[0].pingLoadedMs).toBeUndefined();
   });
 });
