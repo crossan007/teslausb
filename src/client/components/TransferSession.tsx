@@ -90,13 +90,6 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
     },
   );
 
-  const { data: sessionFilesRestData } = useApi<FileTransferProgress[]>(
-    '/api/transfer-session/files',
-    {
-      interval: 5000,
-    },
-  );
-
   // Prefer WebSocket data if available
   const session = useMemo(() => {
     if (
@@ -116,8 +109,8 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
       return wsMessage.data as FileTransferProgress[];
     }
 
-    return queueRestData ?? sessionFilesRestData ?? [];
-  }, [wsMessage, queueRestData, sessionFilesRestData]);
+    return queueRestData ?? [];
+  }, [wsMessage, queueRestData]);
 
   const allQueueFiles = useMemo(() => {
     const deduped = new Map<string, FileTransferProgress>();
@@ -156,19 +149,12 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
   }
 
   let elapsedText: string | undefined;
-  let countdownText: string | undefined;
-
   if (session.startedAtEpoch && session.isActive) {
     const startedAtSeconds = normalizeEpochSeconds(session.startedAtEpoch);
     if (startedAtSeconds !== undefined) {
       const elapsedSeconds = Math.max(0, Math.floor(Date.now() / 1000) - startedAtSeconds);
       elapsedText = `Elapsed: ${formatDuration(elapsedSeconds)}`;
     }
-  }
-
-  if (session.remainingSeconds !== undefined && Number.isFinite(session.remainingSeconds)) {
-    const safeRemaining = Math.max(0, Math.floor(session.remainingSeconds));
-    countdownText = `Remaining: ${formatDuration(safeRemaining)}`;
   }
 
   return (
@@ -180,13 +166,9 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
           <strong className={session.isActive ? 'status-active' : 'status-idle'}>
             {session.isActive ? '🔄 Transferring' : '⏸️ Idle'}
           </strong>
-          <span>
-            {session.filesCompleted}/{session.totalFilesInBatch} done
-            {session.filesFailed > 0 ? `, ${session.filesFailed} failed` : ''}
-          </span>
-          {(elapsedText || countdownText) && (
+          {elapsedText && (
             <span className="session-time">
-              {[elapsedText, countdownText].filter(Boolean).join(' • ')}
+              {elapsedText}
             </span>
           )}
         </div>

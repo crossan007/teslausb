@@ -27,12 +27,9 @@ export interface SnapshotView {
 export interface TransferSessionView {
   isActive: boolean;
   startedAtEpoch?: number;
-  totalFilesInBatch: number;
-  filesCompleted: number;
   filesFailed: number;
   currentFile?: FileTransferProgress;
   overallProgressPercent: number;
-  remainingSeconds?: number;
 }
 
 /**

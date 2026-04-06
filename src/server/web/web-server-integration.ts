@@ -9,7 +9,6 @@ import {
   SnapshotListViewService,
 } from '../view-services';
 import { WebServer, WebServerOptions } from './web-server';
-import { ClipDiscoveryResult } from '../orchestrator/clip-discovery-manager';
 
 /**
  * Wires view services to orchestrator event bus and coordinators
@@ -93,50 +92,4 @@ export class WebServerIntegration {
     await this.webServer.stop();
   }
 
-  /**
-   * Called from lifecycle loop to update transfer progress
-   */
-  updateDiscoveryResult(result: ClipDiscoveryResult): void {
-    // Snapshot added
-    if (result.snapshot) {
-      this.snapshotListView.addSnapshot(result.snapshot);
-    }
-
-    // Files discovered for this snapshot
-    this.snapshotListView.setSnapshotFiles(
-      result.snapshot?.id ?? 'unknown',
-      result.filePaths,
-    );
-
-    // Initial pending clips state
-    this.transferSessionView.setPendingClips(result.pendingClips);
-  }
-
-  /**
-   * Called from archive coordinator to update file transfer status
-   */
-  updateFileTransferStart(filePath: string, totalBytes: number): void {
-    this.transferSessionView.setFileTransferring(filePath, totalBytes);
-  }
-
-  /**
-   * Called from archive coordinator during transfer progress
-   */
-  updateFileTransferProgress(filePath: string, transferredBytes: number): void {
-    this.transferSessionView.updateTransferProgress(filePath, transferredBytes);
-  }
-
-  /**
-   * Called from archive coordinator when file transfer completes
-   */
-  updateFileTransferCompleted(filePath: string): void {
-    this.transferSessionView.setFileCompleted(filePath);
-  }
-
-  /**
-   * Called from archive coordinator when file transfer fails
-   */
-  updateFileTransferFailed(filePath: string): void {
-    this.transferSessionView.setFileFailed(filePath);
-  }
 }

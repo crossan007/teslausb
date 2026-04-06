@@ -121,22 +121,6 @@ export class WebServer {
       }
     });
 
-    // Transfer session files detail
-    this.app.get(
-      '/api/transfer-session/files',
-      (_req: Request, res: Response) => {
-        try {
-          res.json(this.transferSessionView.getAllFilesProgress());
-        } catch (error) {
-          logger.warn(
-            { err: error },
-            'Failed to read transfer session files',
-          );
-          res.status(500).json({ error: 'Failed to read files' });
-        }
-      },
-    );
-
     this.app.get('/api/transfer-queue', (_req: Request, res: Response) => {
       try {
         res.json(this.transferSessionView.getTransferQueueSnapshot());
@@ -198,6 +182,16 @@ export class WebServer {
           ws.send(JSON.stringify({ type: 'transfer-session-update', data: session }), (err?: Error) => {
             if (err) logger.debug({ err }, 'WebSocket send failed');
           });
+
+          ws.send(
+            JSON.stringify({
+              type: 'transfer-queue-update',
+              data: this.transferSessionView.getTransferQueueSnapshot(),
+            }),
+            (err?: Error) => {
+              if (err) logger.debug({ err }, 'WebSocket send failed');
+            },
+          );
         }),
         this.snapshotListView.subscribe((snapshots) => {
           ws.send(JSON.stringify({ type: 'snapshots-update', data: snapshots }), (err?: Error) => {

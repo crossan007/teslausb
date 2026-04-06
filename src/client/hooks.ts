@@ -61,6 +61,10 @@ export type WebSocketMessage =
       data: any;
     }
   | {
+      type: 'transfer-queue-update';
+      data: any;
+    }
+  | {
       type: 'snapshots-update';
       data: any;
     }
