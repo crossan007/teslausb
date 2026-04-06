@@ -201,6 +201,11 @@ code {
   color: #8b949e;
 }
 
+.queue-depth {
+  color: #79c0ff;
+  font-weight: 600;
+}
+
 .status-active {
   color: #3fb950;
 }
@@ -266,6 +271,15 @@ code {
 .active-file-progress {
   color: #79c0ff;
   font-weight: 600;
+}
+
+.active-file-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  color: #8b949e;
+  font-size: 0.8em;
+  margin-bottom: 0.4rem;
 }
 
 .session-file-window {

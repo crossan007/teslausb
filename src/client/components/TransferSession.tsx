@@ -1,6 +1,9 @@
 import React, { useMemo } from 'react';
 import { useApi } from '../hooks';
-import { SnapshotView, TransferSessionView } from '../../view-services/types';
+import {
+  FileTransferProgress,
+  TransferSessionView,
+} from '../../view-services/types';
 
 interface Props {
   wsMessage?: any;
@@ -34,7 +37,7 @@ function formatDuration(totalSeconds: number): string {
 
 function statusLabel(status: 'pending' | 'transferring' | 'archived' | 'failed'): string {
   if (status === 'pending') {
-    return 'To do';
+    return 'Queued';
   }
   if (status === 'transferring') {
     return 'Transferring';
@@ -80,11 +83,17 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
     },
   );
 
-  const { data: snapshotsRestData } = useApi<SnapshotView[]>(
-    '/api/snapshots',
+  const { data: queueRestData } = useApi<FileTransferProgress[]>(
+    '/api/transfer-queue',
     {
       interval: 5000,
-      enabled: !wsConnected,
+    },
+  );
+
+  const { data: sessionFilesRestData } = useApi<FileTransferProgress[]>(
+    '/api/transfer-session/files',
+    {
+      interval: 5000,
     },
   );
 
@@ -99,33 +108,24 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
     return restData;
   }, [wsMessage, restData]);
 
-  const snapshots = useMemo(() => {
+  const transferFiles = useMemo(() => {
     if (
-      wsMessage?.type === 'snapshots-update' &&
+      wsMessage?.type === 'transfer-queue-update' &&
       Array.isArray(wsMessage?.data)
     ) {
-      return wsMessage.data as SnapshotView[];
+      return wsMessage.data as FileTransferProgress[];
     }
 
-    return snapshotsRestData ?? [];
-  }, [wsMessage, snapshotsRestData]);
+    return queueRestData ?? sessionFilesRestData ?? [];
+  }, [wsMessage, queueRestData, sessionFilesRestData]);
 
-  const sessionFiles = useMemo(() => {
-    if (!session) {
-      return [];
+  const allQueueFiles = useMemo(() => {
+    const deduped = new Map<string, FileTransferProgress>();
+    for (const file of transferFiles) {
+      deduped.set(file.relPath, file);
     }
 
-    const deduped = new Map<string, SnapshotView['filesInProgress'][number]>();
-
-    snapshots.forEach((snapshot) => {
-      snapshot.filesInProgress.forEach((file) => {
-        if (!deduped.has(file.relPath)) {
-          deduped.set(file.relPath, file);
-        }
-      });
-    });
-
-    if (session.currentFile && !deduped.has(session.currentFile.relPath)) {
+    if (session?.currentFile && !deduped.has(session.currentFile.relPath)) {
       deduped.set(session.currentFile.relPath, session.currentFile);
     }
 
@@ -137,14 +137,19 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
         }
         return left.relPath.localeCompare(right.relPath);
       });
-  }, [session, snapshots]);
+  }, [transferFiles, session]);
 
-  const activeFiles = sessionFiles.filter((file) => file.status === 'transferring');
+  const activeFile =
+    allQueueFiles.find((file) => file.status === 'transferring') ??
+    session?.currentFile;
+
+  const queuedFiles = allQueueFiles.filter((file) => file.status === 'pending');
+  const queueDepth = queuedFiles.length;
 
   if (!session) {
     return (
       <div className="panel transfer-session">
-        <h2>Transfer Session</h2>
+        <h2>Transfer Queue</h2>
         <p>Idle</p>
       </div>
     );
@@ -166,28 +171,12 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
     countdownText = `Remaining: ${formatDuration(safeRemaining)}`;
   }
 
-  const progressBar = (
-    <div className="progress-bar">
-      <div
-        className="progress-fill"
-        style={{
-          width: `${session.overallProgressPercent}%`,
-        }}
-      >
-        {session.overallProgressPercent > 5 && (
-          <span className="progress-text">
-            {session.overallProgressPercent}%
-          </span>
-        )}
-      </div>
-    </div>
-  );
-
   return (
     <div className="panel transfer-session">
       <div className="transfer-header">
-        <h2>Transfer Session</h2>
+        <h2>Transfer Queue</h2>
         <div className="transfer-header-status">
+          <span className="queue-depth">Depth: {queueDepth}</span>
           <strong className={session.isActive ? 'status-active' : 'status-idle'}>
             {session.isActive ? '🔄 Transferring' : '⏸️ Idle'}
           </strong>
@@ -204,40 +193,46 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
       </div>
 
       <div className="session-active-files">
-        <label>Actively Transferring</label>
-        {activeFiles.length === 0 ? (
+        <label>Current Transfer</label>
+        {!activeFile ? (
           <p className="session-empty">No files are actively transferring.</p>
         ) : (
-          <ul className="active-files-list">
-            {activeFiles.map((file) => (
-              <li key={file.relPath} className="active-file-item">
-                <div className="active-file-row">
-                  <span className="active-file-status">↻ Transferring</span>
-                  <span className="active-file-name">{file.relPath}</span>
-                  {file.progressPercent !== undefined && (
-                    <span className="active-file-progress">{file.progressPercent}%</span>
-                  )}
-                </div>
-                {file.progressPercent !== undefined && (
-                  <div className="progress-bar small">
-                    <div
-                      className="progress-fill"
-                      style={{ width: `${Math.max(0, Math.min(100, file.progressPercent))}%` }}
-                    />
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
+          <div className="active-file-item">
+            <div className="active-file-row">
+              <span className="active-file-status">↻ {statusLabel(activeFile.status)}</span>
+              <span className="active-file-name">{activeFile.relPath}</span>
+              {activeFile.progressPercent !== undefined && (
+                <span className="active-file-progress">{activeFile.progressPercent}%</span>
+              )}
+            </div>
+            <div className="active-file-meta">
+              <span>Age: {Math.floor(activeFile.ageSec / 60)}m</span>
+              <span>{activeFile.isSymlink ? 'Symlink' : 'Materialized'}</span>
+              {activeFile.totalBytes !== undefined && (
+                <span>
+                  {(((activeFile.transferredBytes ?? 0) / (1024 ** 2))).toFixed(1)}MB / {((activeFile.totalBytes / (1024 ** 2))).toFixed(1)}MB
+                </span>
+              )}
+            </div>
+            {activeFile.progressPercent !== undefined && (
+              <div className="progress-bar small">
+                <div
+                  className="progress-fill"
+                  style={{ width: `${Math.max(0, Math.min(100, activeFile.progressPercent))}%` }}
+                />
+              </div>
+            )}
+          </div>
         )}
+      </div>
 
-        <div className="session-file-window">
-          <div className="session-file-window-title">All Session Files</div>
-          {sessionFiles.length === 0 ? (
-            <p className="session-empty">No session files found yet.</p>
+      <div className="session-file-window">
+          <div className="session-file-window-title">Queued Files</div>
+          {queuedFiles.length === 0 ? (
+            <p className="session-empty">Queue is empty.</p>
           ) : (
             <ul className="session-file-table" role="list">
-              {sessionFiles.map((file) => (
+              {queuedFiles.map((file) => (
                 <li key={file.relPath} className={`session-file-row status-${file.status}`}>
                   <span className="session-file-state">{statusMark(file.status)} {statusLabel(file.status)}</span>
                   <span className="session-file-path">{file.relPath}</span>
@@ -246,57 +241,7 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
             </ul>
           )}
         </div>
-      </div>
 
-      {session.isActive && (
-        <div className="session-stats">
-          <div className="stat-row">
-            <label>Files</label>
-            <value>
-              {session.filesCompleted} / {session.totalFilesInBatch} complete
-              {session.filesFailed > 0 && (
-                <span className="failed">
-                  , {session.filesFailed} failed
-                </span>
-              )}
-            </value>
-          </div>
-
-          <div className="stat-row">
-            <label>Overall Progress</label>
-            {progressBar}
-          </div>
-
-          {session.currentFile && (
-            <div className="current-file">
-              <label>Current File</label>
-              <p>{session.currentFile.relPath}</p>
-              {session.currentFile.totalBytes && (
-                <>
-                  <small>
-                    {(
-                      (session.currentFile.transferredBytes ?? 0) /
-                      (1024 ** 2)
-                    ).toFixed(1)}
-                    MB / {(session.currentFile.totalBytes / (1024 ** 2)).toFixed(1)}
-                    MB
-                  </small>
-                  {session.currentFile.progressPercent !== undefined && (
-                    <div className="progress-bar small">
-                      <div
-                        className="progress-fill"
-                        style={{
-                          width: `${session.currentFile.progressPercent}%`,
-                        }}
-                      />
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
