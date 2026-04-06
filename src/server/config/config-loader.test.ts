@@ -43,6 +43,7 @@ describe('ConfigLoader', () => {
     vi.stubEnv('ARCHIVE_SYSTEM', 'rsync');
     vi.stubEnv('RSYNC_SERVER', 'backup.example.com');
     vi.stubEnv('RSYNC_USER', 'user123');
+    vi.stubEnv('RSYNC_MAX_RATE', '1.5m');
     vi.stubEnv('ARCHIVE_DELAY', '600');
 
     const config = configLoader.load();
@@ -50,6 +51,7 @@ describe('ConfigLoader', () => {
     expect(config.archiveSystem).toBe('rsync');
     expect(config.rsyncServer).toBe('backup.example.com');
     expect(config.rsyncUser).toBe('user123');
+    expect(config.rsyncMaxRate).toBe('1.5m');
     expect(config.archiveDelay).toBe(600);
   });
 
@@ -103,6 +105,7 @@ export ARCHIVE_DELAY=600
     const fileContent = `
 export TESLA_EMAIL="user@example.com"
 export RSYNC_SERVER='backup.server.com'
+export RSYNC_MAX_RATE='750K'
 `;
     writeFileSync(tempConfigPath, fileContent, 'utf-8');
 
@@ -111,6 +114,7 @@ export RSYNC_SERVER='backup.server.com'
 
     expect(config.teslaEmail).toBe('user@example.com');
     expect(config.rsyncServer).toBe('backup.server.com');
+    expect(config.rsyncMaxRate).toBe('750K');
   });
 
   it('validates configuration schema', () => {

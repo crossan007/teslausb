@@ -33,7 +33,7 @@ export class RsyncBackend implements ArchiveBackend {
   readonly name = 'rsync';
 
   constructor(
-    private readonly config: Pick<TeslaUSBConfig, 'rsyncServer' | 'rsyncUser' | 'rsyncPath'>,
+    private readonly config: Pick<TeslaUSBConfig, 'rsyncServer' | 'rsyncUser' | 'rsyncPath' | 'rsyncMaxRate'>,
     private readonly commandRunner: CommandRunner = defaultCommandRunner,
     private readonly options: RsyncBackendOptions = {},
   ) {}
@@ -89,6 +89,7 @@ export class RsyncBackend implements ArchiveBackend {
         '--omit-dir-times',
         '--stats',
         '--ignore-missing-args',
+        ...this.buildBandwidthLimitArgs(),
         `--files-from=${triggerListPath}`,
         triggerRoot,
         destination,
@@ -132,6 +133,7 @@ export class RsyncBackend implements ArchiveBackend {
           '--stats',
           '--info=progress2,name',
           '--ignore-missing-args',
+          ...this.buildBandwidthLimitArgs(),
           `--files-from=${fileListPath}`,
           fromPath,
           destination,
@@ -198,6 +200,11 @@ export class RsyncBackend implements ArchiveBackend {
     }
 
     return { rsyncServer, rsyncUser, rsyncPath };
+  }
+
+  private buildBandwidthLimitArgs(): string[] {
+    const rate = this.config.rsyncMaxRate?.trim();
+    return rate ? [`--bwlimit=${rate}`] : [];
   }
 
   private createTransferSession(filePaths: string[], sessionId?: string): TransferSession {

@@ -7,6 +7,7 @@ export const ENV_TO_CONFIG_KEY: Record<string, string> = {
   RSYNC_SERVER: 'rsyncServer',
   RSYNC_USER: 'rsyncUser',
   RSYNC_PATH: 'rsyncPath',
+  RSYNC_MAX_RATE: 'rsyncMaxRate',
   RCLONE_DRIVE: 'rcloneDrive',
   RCLONE_PATH: 'rclonePath',
   ARCHIVE_SERVER: 'archiveServer',

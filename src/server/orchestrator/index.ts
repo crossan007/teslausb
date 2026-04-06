@@ -31,6 +31,7 @@ function createArchiveBackend(config: TeslaUSBConfig): ArchiveBackend {
         rsyncServer: config.rsyncServer,
         rsyncUser: config.rsyncUser,
         rsyncPath: config.rsyncPath,
+        rsyncMaxRate: config.rsyncMaxRate,
       });
     case 'rclone':
     case 'cifs':

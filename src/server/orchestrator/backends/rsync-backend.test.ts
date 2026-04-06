@@ -109,6 +109,21 @@ describe('RsyncBackend', () => {
     expect(sessions.some((session) => session.currentFilePath === 'SavedClips/a.mp4')).toBe(true);
   });
 
+  it('passes through rsync bwlimit when configured', async () => {
+    const runner = new MockCommandRunner();
+    runner.setResult('rsync', { code: 0, stdout: '', stderr: '' });
+
+    const backend = new RsyncBackend(
+      { rsyncServer: 'host', rsyncUser: 'user', rsyncPath: '/archive', rsyncMaxRate: '1.5m' },
+      runner,
+      { tempRootDir: '/tmp' },
+    );
+
+    await backend.archiveClips('/mnt/cam', ['SavedClips/a.mp4']).result;
+
+    expect(runner.calls.at(-1)?.args).toContain('--bwlimit=1.5m');
+  });
+
   it('parses progress lines that use ir-chk and updates transfer progress before completion', async () => {
     const sourceRoot = await mkdtemp(join(tmpdir(), 'teslausb-rsync-irchk-'));
     const relPath = 'RecentClips/large.mp4';
@@ -284,6 +299,21 @@ describe('RsyncBackend', () => {
     expect(runner.calls[0].command).toBe('rsync');
     expect(runner.calls[0].args).toContain('user@host:/archive');
     expect(runner.calls[0].args.join(' ')).toContain('trigger-files.txt');
+  });
+
+  it('applies bwlimit to trigger file writes when configured', async () => {
+    const runner = new MockCommandRunner();
+    runner.setResult('rsync', { code: 0, stdout: '', stderr: '' });
+
+    const backend = new RsyncBackend(
+      { rsyncServer: 'host', rsyncUser: 'user', rsyncPath: '/archive', rsyncMaxRate: '500K' },
+      runner,
+      { tempRootDir: '/tmp' },
+    );
+
+    await backend.writeTriggerFiles(['SavedClips/saved.trigger']);
+
+    expect(runner.calls[0].args).toContain('--bwlimit=500K');
   });
 
 });

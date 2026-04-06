@@ -14,6 +14,7 @@ export const ConfigSchema = z.object({
   rsyncServer: z.string().optional(),
   rsyncUser: z.string().optional(),
   rsyncPath: z.string().optional(),
+  rsyncMaxRate: z.string().optional(),
 
   // Rclone backend
   rcloneDrive: z.string().optional(),
