@@ -4,7 +4,7 @@
  */
 import { ArchiveBackend, DefaultSyncStatus, OperationResult, SyncStatus, TransferFileProgress, TransferSession } from '../../types';
 import { logger } from '../core/logger';
-import { SnapshotDecision, SnapshotManager } from './snapshot-manager';
+import { SnapshotDecision, SnapshotManager } from './snapshot/snapshot-manager';
 import { FreeSpaceDecision, FreeSpaceManager } from './free-space-manager';
 
 const DEFAULT_PROGRESS_LOG_INCREMENT_PERCENT = 25;

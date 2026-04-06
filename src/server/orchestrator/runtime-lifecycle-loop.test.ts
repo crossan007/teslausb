@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Snapshot, SyncStatus } from '../../types';
 import { CommandResult, CommandRunner } from '../shared/command-runner';
 import { RuntimeLifecycleLoop } from './runtime-lifecycle-loop';
-import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
+import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery/clip-discovery-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend, ArchiveTransferExecution, createCompletedTransferExecution } from '../../types/archive';
 import { ArchiveEvent } from './events';

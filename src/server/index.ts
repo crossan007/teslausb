@@ -20,7 +20,7 @@ async function main(): Promise<void> {
     pingPacketSize: config.systemStatusPingPacketSize,
   });
 
-  const webServer = new WebServerIntegration(eventBus, statusManager, config);
+  const webServer = new WebServerIntegration(eventBus, statusManager, snapshotManager, config);
   await webServer.start();
 
   logger.info('TeslaUSB service running');

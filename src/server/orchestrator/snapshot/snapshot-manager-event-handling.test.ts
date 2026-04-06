@@ -1,19 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ArchiveEvent } from './events';
-import { SnapshotEventCoordinator } from './snapshot-event-coordinator';
+import { ArchiveEvent } from '../events';
+import { SnapshotManager } from './snapshot-manager';
 
-describe('SnapshotEventCoordinator', () => {
+describe('SnapshotManager event handling', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
   it('debounces backing image changes into one mounted snapshot event', async () => {
     vi.useFakeTimers();
+    vi.setSystemTime(5000);
 
     const events: ArchiveEvent[] = [];
     const consumers = new Set<(event: ArchiveEvent) => void | Promise<void>>();
-    const snapshotManager = {
-      createMountedSnapshot: vi.fn(async () => ({
+    const snapshotManager = new SnapshotManager(300, { changeDebounceMs: 100 });
+    const createMountedSnapshot = vi
+      .spyOn(snapshotManager, 'createMountedSnapshot')
+      .mockResolvedValue({
         id: 'snap-000001',
         createdAt: 123,
         filePath: '/backingfiles/snapshots/snap-000001/snap.bin',
@@ -21,9 +24,10 @@ describe('SnapshotEventCoordinator', () => {
         mountPath: '/backingfiles/snapshots/snap-000001/mnt',
         size: 100,
         isLinked: true,
-      })),
-      resolveDiscoveryRoot: vi.fn(async () => '/backingfiles/snapshots/snap-000001/mnt/TeslaCam'),
-    };
+      });
+    vi
+      .spyOn(snapshotManager, 'resolveDiscoveryRoot')
+      .mockResolvedValue('/backingfiles/snapshots/snap-000001/mnt/TeslaCam');
 
     const eventBus = {
       publish: async (event: ArchiveEvent) => {
@@ -40,14 +44,7 @@ describe('SnapshotEventCoordinator', () => {
       },
     };
 
-    const coordinator = new SnapshotEventCoordinator({
-      eventBus,
-      snapshotManager: snapshotManager as never,
-      debounceMs: 100,
-      nowMsProvider: () => 5000,
-    });
-
-    coordinator.start();
+    snapshotManager.start(eventBus);
 
     await eventBus.publish({
       type: 'backing-image-changed',
@@ -66,9 +63,13 @@ describe('SnapshotEventCoordinator', () => {
 
     await vi.advanceTimersByTimeAsync(100);
 
-    expect(snapshotManager.createMountedSnapshot).toHaveBeenCalledTimes(1);
-    expect(events.filter((event) => event.type === 'snapshot-ready')).toHaveLength(1);
+    expect(createMountedSnapshot).toHaveBeenCalledTimes(1);
+    const snapshotReadyEvents = events.filter(
+      (event): event is Extract<ArchiveEvent, { type: 'snapshot-ready' }> => event.type === 'snapshot-ready',
+    );
+    expect(snapshotReadyEvents).toHaveLength(1);
+    expect(snapshotReadyEvents[0].occurredAtMs).toBe(5100);
 
-    coordinator.stop();
+    snapshotManager.stop();
   });
 });

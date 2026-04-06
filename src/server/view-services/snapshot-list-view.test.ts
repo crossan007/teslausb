@@ -1,19 +1,37 @@
 import { describe, expect, it } from 'vitest';
-import { ArchiveEvent } from '../orchestrator/events';
 import { SnapshotListViewService } from './snapshot-list-view';
-import { ClipRegistry } from '../../types';
+import { ClipRegistry, Snapshot } from '../../types';
 
-class FakeEventBus {
-  subscribe(_consumer: (event: ArchiveEvent) => Promise<void>): () => void {
-    return () => undefined;
+class FakeSnapshotSource {
+  private snapshots: Snapshot[] = [];
+  private readonly listeners = new Set<(snapshots: Snapshot[]) => void>();
+
+  listActiveSnapshots(): Snapshot[] {
+    return this.snapshots;
+  }
+
+  subscribeActiveSnapshots(listener: (snapshots: Snapshot[]) => void): () => void {
+    this.listeners.add(listener);
+    listener(this.snapshots);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  setSnapshots(snapshots: Snapshot[]): void {
+    this.snapshots = snapshots;
+    for (const listener of this.listeners) {
+      listener(snapshots);
+    }
   }
 }
 
 describe('SnapshotListViewService', () => {
   it('computes newFilesCount from first-seen snapshot ownership', () => {
-    const service = new SnapshotListViewService(new FakeEventBus());
+    const source = new FakeSnapshotSource();
+    const service = new SnapshotListViewService(source);
 
-    service.addSnapshot({
+    const snapshot1: Snapshot = {
       id: 'snap-1',
       createdAt: 100,
       filePath: '/s1/snap.bin',
@@ -21,8 +39,8 @@ describe('SnapshotListViewService', () => {
       mountPath: '/s1/mnt',
       size: 0,
       isLinked: true,
-    });
-    service.addSnapshot({
+    };
+    const snapshot2: Snapshot = {
       id: 'snap-2',
       createdAt: 200,
       filePath: '/s2/snap.bin',
@@ -30,7 +48,9 @@ describe('SnapshotListViewService', () => {
       mountPath: '/s2/mnt',
       size: 0,
       isLinked: true,
-    });
+    };
+
+    source.setSnapshots([snapshot1, snapshot2]);
 
     const registry: ClipRegistry = {
       updatedAt: Date.now(),

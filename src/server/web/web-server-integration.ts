@@ -1,6 +1,7 @@
 import { logger } from '../core/logger';
 import { stateManager } from '../core';
 import { ArchiveEventBusLike } from '../orchestrator/events';
+import { SnapshotManager } from '../orchestrator/snapshot/snapshot-manager';
 import { SystemStatusManager } from '../core/system-status-manager';
 import { TeslaUSBConfig } from '../../types';
 import {
@@ -22,12 +23,13 @@ export class WebServerIntegration {
   constructor(
     eventBus: ArchiveEventBusLike,
     statusManager: SystemStatusManager,
+    snapshotManager: SnapshotManager,
     config: TeslaUSBConfig,
     options?: Partial<WebServerOptions>,
   ) {
     const systemStatusView = new SystemStatusView(statusManager);
     this.transferSessionView = new TransferSessionViewService(eventBus);
-    this.snapshotListView = new SnapshotListViewService(eventBus);
+    this.snapshotListView = new SnapshotListViewService(snapshotManager);
 
     this.webServer = new WebServer({
       port: config.webPort,

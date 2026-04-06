@@ -6,7 +6,7 @@ import { readFile } from 'fs/promises';
 import { logger } from './logger';
 import { NetworkHealthSample, SystemStatus } from '../../types';
 import { CommandRunner, defaultCommandRunner } from '../shared/command-runner';
-import { SnapshotManager } from '../orchestrator/snapshot-manager';
+import { SnapshotManager } from '../orchestrator/snapshot/snapshot-manager';
 
 export interface SystemStatusManagerOptions {
   snapshotManager?: SnapshotManager;

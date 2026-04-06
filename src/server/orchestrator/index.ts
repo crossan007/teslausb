@@ -7,13 +7,12 @@ import { logger, stateManager } from '../core';
 import { gadgetManager } from '../core/gadget-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend, supportsTriggerFileWrites } from '../../types';
-import { ClipDiscoveryManager } from './clip-discovery-manager';
-import { SnapshotDiscoveryConsumer } from './snapshot-discovery-consumer';
+import { ClipDiscoveryManager } from './clip-discovery/clip-discovery-manager';
+import { SnapshotDiscoveryConsumer } from './clip-discovery/snapshot-discovery-consumer';
 import { RsyncBackend } from './backends';
 import { RuntimeLifecycleLoop } from './runtime-lifecycle-loop';
-import { BackingImageChangeDetector } from './backing-image-change-detector';
-import { SnapshotManager } from './snapshot-manager';
-import { SnapshotEventCoordinator } from './snapshot-event-coordinator';
+import { BackingImageChangeDetector } from './snapshot/backing-image-change-detector';
+import { SnapshotManager } from './snapshot/snapshot-manager';
 import { ArchiveEventBus, PushMessageEventHandler, TeslaApiInteropEventHandler } from './events';
 import { ClipRegistryManager } from './clip-registry-manager';
 import { TransferSession } from '../../types/transfer';
@@ -124,10 +123,6 @@ export async function startOrchestrator(config: TeslaUSBConfig): Promise<Orchest
   });
   const snapshotManager = new SnapshotManager();
   await snapshotManager.cleanupStaleSnapshots();
-  const snapshotEventCoordinator = new SnapshotEventCoordinator({
-    eventBus,
-    snapshotManager
-  });
   const backingImageChangeDetector = new BackingImageChangeDetector({
     imagePath: CAM_DISK_PATH,
     eventBus,
@@ -201,7 +196,7 @@ export async function startOrchestrator(config: TeslaUSBConfig): Promise<Orchest
     },
   );
 
-  snapshotEventCoordinator.start();
+  snapshotManager.start(eventBus);
   backingImageChangeDetector.start();
   lifecycleLoop.start();
   logger.info('Clip discovery loop started');

@@ -6,8 +6,8 @@
 import { Dirent } from 'fs';
 import { mkdir, opendir, readFile, stat, lstat, writeFile } from 'fs/promises';
 import { dirname, posix as posixPath } from 'path';
-import { PendingClips, Snapshot } from '../../types';
-import { blake2s256 } from '../shared';
+import { PendingClips, Snapshot } from '../../../types';
+import { blake2s256 } from '../../shared';
 
 const DEFAULT_MIN_CLIP_SIZE_BYTES = 100_000;
 const DEFAULT_STAT_CONCURRENCY = 32;

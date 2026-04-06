@@ -7,7 +7,7 @@
 import { statfs } from 'fs/promises';
 import { logger } from '../core/logger';
 import { FreeSpaceDecision, FreeSpaceManager } from './free-space-manager';
-import { SnapshotDecision, SnapshotManager } from './snapshot-manager';
+import { SnapshotDecision, SnapshotManager } from './snapshot/snapshot-manager';
 
 export interface DiskUsage {
   freeBytes: number;

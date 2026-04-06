@@ -1,5 +1,5 @@
 import { ClipRegistry, ClipRegistryEntry, Snapshot, TransferQueue, TransferQueueFile } from '../../types';
-import { ClipDiscoveryResult } from './clip-discovery-manager';
+import { ClipDiscoveryResult } from './clip-discovery/clip-discovery-manager';
 import { logger } from '../core';
 
 interface SnapshotRef {

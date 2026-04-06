@@ -1,7 +1,7 @@
 import { stat } from 'fs/promises';
 import { Subject, Subscription, exhaustMap, timer } from 'rxjs';
-import { logger } from '../core/logger';
-import { ArchiveEventBusLike } from './events';
+import { logger } from '../../core/logger';
+import { ArchiveEventBusLike } from '../events';
 
 export interface BackingImageChangeDetectorOptions {
   imagePath: string;

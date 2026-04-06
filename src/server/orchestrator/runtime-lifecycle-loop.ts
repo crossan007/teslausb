@@ -6,21 +6,13 @@ import { concatMap, Observable, Subscription } from 'rxjs';
 import { logger, stateManager } from '../core';
 import { CommandRunner, defaultCommandRunner } from '../shared/command-runner';
 import { DefaultSyncStatus, PendingClips, SyncStatus } from '../../types';
-import { buildPendingClips, ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
+import { buildPendingClips, ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery/clip-discovery-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend } from '../../types/archive';
 import { ArchiveEventBus, ArchiveEventBusLike } from './events';
 import { ClipRegistryManager } from './clip-registry-manager';
-import { SnapshotManager } from './snapshot-manager';
-
-/**
- * Structural contract expected from any discovery source (snapshot consumer, test fake, etc.).
- */
-export interface DiscoverySource {
-  readonly discovered$: Observable<ClipDiscoveryResult>;
-  start(): void;
-  stop(): void;
-}
+import { SnapshotManager } from './snapshot/snapshot-manager';
+import { DiscoverySource } from './discovery-source';
 
 /**
  * Controls polling cadence and lifecycle hook behavior around archive cycles.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ClipRegistry, Snapshot } from '../../types';
 import { blake2s256 } from '../shared';
-import { ClipDiscoveryResult } from './clip-discovery-manager';
+import { ClipDiscoveryResult } from './clip-discovery/clip-discovery-manager';
 import { ClipRegistryManager } from './clip-registry-manager';
 
 function snapshot(id: string, createdAt: number, onRelease: () => Promise<void>): Snapshot {

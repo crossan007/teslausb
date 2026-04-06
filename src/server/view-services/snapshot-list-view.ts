@@ -1,6 +1,6 @@
 import { SnapshotView, FileTransferProgress } from './types';
 import { BaseViewService } from './base-view-service';
-import { ArchiveEventBusLike } from '../orchestrator/events';
+import { ActiveSnapshotSource } from '../orchestrator/snapshot/snapshot-manager';
 import { ClipRegistry, Snapshot } from '../../types';
 
 /**
@@ -10,13 +10,10 @@ export class SnapshotListViewService extends BaseViewService<SnapshotView[]> {
   private snapshots = new Map<string, SnapshotView>();
   private snapshotFiles = new Map<string, Map<string, FileTransferProgress>>();
 
-  constructor(private readonly eventBus: ArchiveEventBusLike) {
+  constructor(snapshotSource: ActiveSnapshotSource) {
     super();
-
-    this.eventBus.subscribe(async (event) => {
-      if (event.type === 'snapshot-ready') {
-        this.addSnapshot(event.snapshot);
-      }
+    snapshotSource.subscribeActiveSnapshots((snapshots) => {
+      this.syncActiveSnapshots(snapshots);
     });
   }
 
@@ -39,6 +36,34 @@ export class SnapshotListViewService extends BaseViewService<SnapshotView[]> {
       this.snapshotFiles.set(snapshot.id, new Map());
       this.emit();
     }
+  }
+
+  private syncActiveSnapshots(snapshots: Snapshot[]): void {
+    const activeIds = new Set(snapshots.map((snapshot) => snapshot.id));
+
+    for (const snapshotId of Array.from(this.snapshots.keys())) {
+      if (!activeIds.has(snapshotId)) {
+        this.snapshots.delete(snapshotId);
+        this.snapshotFiles.delete(snapshotId);
+      }
+    }
+
+    for (const snapshot of snapshots) {
+      const existing = this.snapshots.get(snapshot.id);
+      if (existing) {
+        existing.snapshot = snapshot;
+        continue;
+      }
+
+      this.snapshots.set(snapshot.id, {
+        snapshot,
+        newFilesCount: 0,
+        filesInProgress: [],
+      });
+      this.snapshotFiles.set(snapshot.id, new Map());
+    }
+
+    this.emit();
   }
 
   /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BackingImageChangeDetector } from './backing-image-change-detector';
-import { ArchiveEvent } from './events';
+import { ArchiveEvent } from '../events';
 
 describe('BackingImageChangeDetector', () => {
   it('emits initial and changed image events', async () => {

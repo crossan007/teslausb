@@ -2,15 +2,16 @@
  * Consumes immutable snapshot-ready events and emits one discovery result per snapshot scan root.
  */
 import { Observable, Subject } from 'rxjs';
-import { PendingClips } from '../../types';
-import { logger } from '../core/logger';
+import { PendingClips } from '../../../types';
+import { logger } from '../../core/logger';
 import {
   buildPendingClips,
   ClipDiscoveryManager,
   ClipDiscoveryOptions,
   ClipDiscoveryResult,
 } from './clip-discovery-manager';
-import { ArchiveEventBusLike, SnapshotReadyEvent } from './events';
+import { ArchiveEventBusLike, SnapshotReadyEvent } from '../events';
+import { DiscoverySource } from '../discovery-source';
 
 export interface SnapshotDiscoveryConsumerOptions extends Omit<ClipDiscoveryOptions, 'rootPath'> {
   emitOnChangeOnly?: boolean;
@@ -18,7 +19,7 @@ export interface SnapshotDiscoveryConsumerOptions extends Omit<ClipDiscoveryOpti
   eventBus: ArchiveEventBusLike;
 }
 
-export class SnapshotDiscoveryConsumer {
+export class SnapshotDiscoveryConsumer implements DiscoverySource {
   private readonly eventsSubject = new Subject<ClipDiscoveryResult>();
   private readonly pendingScanRoots: SnapshotReadyEvent[] = [];
   private running = false;

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Snapshot } from '../../types';
+import { Snapshot } from '../../../types';
 import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
 import { SnapshotDiscoveryConsumer } from './snapshot-discovery-consumer';
-import { ArchiveEvent } from './events';
-import { blake2s256 } from '../shared';
+import { ArchiveEvent } from '../events';
+import { blake2s256 } from '../../shared';
 
 type BusSubscriber = (event: ArchiveEvent) => Promise<void>;
 
