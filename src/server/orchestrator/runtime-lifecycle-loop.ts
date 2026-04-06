@@ -207,15 +207,19 @@ export class RuntimeLifecycleLoop {
         } else {
           this.clipRegistryManager.markTransferFailed(nextClip.key);
           consecutiveFailures += 1;
-          this.runtimeLogger.info(
+          const failureReason = !cycleSucceeded
+            ? 'archive_cycle_failed'
+            : 'source_not_archived_after_transfer';
+          this.runtimeLogger.warn(
             {
               relPath: nextClip.relPath,
               cycleSucceeded,
               archived,
+              failureReason,
               consecutiveFailures,
               maxConsecutiveFailures,
             },
-            'Queued clip transfer did not complete; leaving in queue',
+            'Queued clip transfer did not complete',
           );
 
           if (consecutiveFailures >= maxConsecutiveFailures) {
