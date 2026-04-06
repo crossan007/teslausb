@@ -59,9 +59,6 @@ export class TransferSessionViewService extends BaseViewService<TransferSessionV
    * Applies queue-centric transfer state persisted by the orchestrator.
    */
   applyTransferQueue(queue: TransferQueue): void {
-    this.currentSession.totalFilesInBatch = queue.files.length;
-    this.currentSession.isActive = queue.files.some((file) => file.status === 'transferring');
-
     this.fileProgress.clear();
     for (const file of queue.files) {
       const status: FileTransferProgress['status'] =

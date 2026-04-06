@@ -69,11 +69,6 @@ export class WebServerIntegration {
 
   private setupStateWiring(): void {
     this.statePollTimer = setInterval(() => {
-      const pending = stateManager.readPendingClips();
-      if (pending) {
-        this.transferSessionView.setPendingClips(pending);
-      }
-
       const transferQueue = stateManager.readTransferQueue();
       if (transferQueue) {
         this.transferSessionView.applyTransferQueue(transferQueue);
