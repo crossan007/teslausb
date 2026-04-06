@@ -125,19 +125,13 @@ export class SnapshotManager {
   async resolveDiscoveryRoot(snapshotOrId: Snapshot | string): Promise<string> {
     const snapshotId = typeof snapshotOrId === 'string' ? snapshotOrId : snapshotOrId.id;
     const mountPath = this.buildMountPath(snapshotId);
+    const teslaCamRoot = join(mountPath, 'TeslaCam');
 
-    if (await pathExists(join(mountPath, 'SavedClips'))
-      || await pathExists(join(mountPath, 'SentryClips'))
-      || await pathExists(join(mountPath, 'TeslaTrackMode'))
-      || await pathExists(join(mountPath, 'RecentClips'))) {
-      return mountPath;
+    if (await pathExists(teslaCamRoot)) {
+      return teslaCamRoot;
     }
 
-    if (await pathExists(join(mountPath, 'TeslaCam'))) {
-      return join(mountPath, 'TeslaCam');
-    }
-
-    return mountPath;
+    throw new Error(`Discovery root missing TeslaCam directory: ${teslaCamRoot}`);
   }
 
   async releaseSnapshot(snapshotId: string): Promise<void> {
