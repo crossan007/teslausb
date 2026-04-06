@@ -46,7 +46,7 @@ export class SystemStatusManager {
 
   async readSystemStatus(): Promise<SystemStatus | null> {
     try {
-      const uptime = Math.floor(process.uptime());
+      const uptime = await this.getUptimeSeconds();
       await this.ensureNetworkHealthSample();
       const [diskUsage, numSnapshots, cpuTemp] = await Promise.all([
         this.getDiskUsage(),
@@ -276,6 +276,21 @@ export class SystemStatusManager {
     } catch (error) {
       logger.debug({ err: error }, 'Failed to read CPU temperature');
       return null;
+    }
+  }
+
+  private async getUptimeSeconds(): Promise<number> {
+    try {
+      const uptimeRaw = await readFile('/proc/uptime', 'utf-8');
+      const firstField = uptimeRaw.trim().split(/\s+/)[0];
+      const parsed = Number.parseFloat(firstField);
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        return Math.floor(parsed);
+      }
+      return Math.floor(process.uptime());
+    } catch (error) {
+      logger.debug({ err: error }, 'Failed to read system uptime; using process uptime fallback');
+      return Math.floor(process.uptime());
     }
   }
 }
