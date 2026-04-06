@@ -1,9 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApi } from '../hooks';
 import {
   FileTransferProgress,
   TransferSessionView,
-} from '../../view-services/types';
+} from '../../server/view-services/types';
 
 interface Props {
   wsMessage?: any;
@@ -75,6 +75,9 @@ function statusRank(status: 'pending' | 'transferring' | 'archived' | 'failed'):
 }
 
 export default function TransferSessionComponent({ wsMessage, wsConnected }: Props) {
+  const [wsSession, setWsSession] = useState<TransferSessionView | null>(null);
+  const [wsQueue, setWsQueue] = useState<FileTransferProgress[] | null>(null);
+
   const { data: restData } = useApi<TransferSessionView>(
     '/api/transfer-session',
     {
@@ -90,27 +93,32 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
     },
   );
 
+  useEffect(() => {
+    if (wsMessage?.type === 'transfer-session-update' && wsMessage?.data) {
+      setWsSession(wsMessage.data as TransferSessionView);
+    }
+
+    if (wsMessage?.type === 'transfer-queue-update' && Array.isArray(wsMessage?.data)) {
+      setWsQueue(wsMessage.data as FileTransferProgress[]);
+    }
+  }, [wsMessage]);
+
   // Prefer WebSocket data if available
   const session = useMemo(() => {
-    if (
-      wsMessage?.type === 'transfer-session-update' &&
-      wsMessage?.data
-    ) {
-      return wsMessage.data as TransferSessionView;
+    if (wsConnected) {
+      return wsSession ?? restData;
     }
+
     return restData;
-  }, [wsMessage, restData]);
+  }, [wsConnected, wsSession, restData]);
 
   const transferFiles = useMemo(() => {
-    if (
-      wsMessage?.type === 'transfer-queue-update' &&
-      Array.isArray(wsMessage?.data)
-    ) {
-      return wsMessage.data as FileTransferProgress[];
+    if (wsConnected) {
+      return wsQueue ?? queueRestData ?? [];
     }
 
     return queueRestData ?? [];
-  }, [wsMessage, queueRestData]);
+  }, [wsConnected, wsQueue, queueRestData]);
 
   const allQueueFiles = useMemo(() => {
     const deduped = new Map<string, FileTransferProgress>();
