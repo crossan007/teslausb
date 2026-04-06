@@ -19,6 +19,8 @@ import {
   TransferSessionSchema,
   ClipRegistry,
   ClipRegistrySchema,
+  StartupRecoveryStatus,
+  StartupRecoveryStatusSchema,
 } from '../../types';
 import { ensureDir } from '../shared';
 
@@ -351,6 +353,44 @@ export class StateManager {
       logger.debug({ entries: registry.entries.length }, 'Clip registry written');
     } catch (error) {
       logger.error({ err: error }, 'Failed to write clip registry');
+      throw error;
+    }
+  }
+
+  /**
+   * Read startup recovery status for stale state cleanup performed on boot.
+   */
+  readStartupRecoveryStatus(): StartupRecoveryStatus | null {
+    try {
+      const path = this.statePath('startup_recovery');
+      if (!existsSync(path)) {
+        return null;
+      }
+      const content = readFileSync(path, 'utf-8');
+      const data = JSON.parse(content);
+      const parsed = StartupRecoveryStatusSchema.safeParse(data);
+      if (!parsed.success) {
+        logger.warn({ issues: parsed.error.issues }, 'Invalid StartupRecoveryStatus format');
+        return null;
+      }
+      return parsed.data;
+    } catch (error) {
+      logger.warn({ error }, 'Failed to read startup recovery status');
+      return null;
+    }
+  }
+
+  /**
+   * Write startup recovery status for stale state cleanup performed on boot.
+   */
+  writeStartupRecoveryStatus(status: StartupRecoveryStatus): void {
+    try {
+      const path = this.statePath('startup_recovery');
+      ensureDir(dirname(path));
+      writeFileSync(path, JSON.stringify(status, null, 2), 'utf-8');
+      logger.debug({ status }, 'Startup recovery status written');
+    } catch (error) {
+      logger.error({ err: error, status }, 'Failed to write startup recovery status');
       throw error;
     }
   }

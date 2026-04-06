@@ -144,6 +144,7 @@ export class WebServer {
         const pendingClips = stateManager.readPendingClips();
         const transferSession = stateManager.readTransferSession();
         const snapshotState = stateManager.readSnapshot();
+        const startupRecovery = stateManager.readStartupRecoveryStatus();
 
         const entries = registry?.entries ?? [];
         const statusCounts = this.buildStatusCounts(entries);
@@ -211,6 +212,22 @@ export class WebServer {
           });
         }
 
+        const startupRecoveryCount = startupRecovery?.clipRegistryRecoveredTransferring ?? 0;
+        if ((startupRecovery?.transferSessionRecovered ?? false) || startupRecoveryCount > 0) {
+          const parts: string[] = [];
+          if (startupRecovery?.transferSessionRecovered) {
+            parts.push('transfer session');
+          }
+          if (startupRecoveryCount > 0) {
+            parts.push(`${startupRecoveryCount} clip registry entries`);
+          }
+          alerts.push({
+            level: 'info',
+            code: 'startup_recovery_performed',
+            message: `Startup recovery converted stale state: ${parts.join(', ')}`,
+          });
+        }
+
         res.json({
           generatedAt: Date.now(),
           summary: {
@@ -251,6 +268,13 @@ export class WebServer {
                   updatedAt: transferSession.updatedAt,
                 }
               : null,
+            startupRecovery: startupRecovery
+              ? {
+                  updatedAt: startupRecovery.updatedAt,
+                  transferSessionRecovered: startupRecovery.transferSessionRecovered,
+                  clipRegistryRecoveredTransferring: startupRecovery.clipRegistryRecoveredTransferring,
+                }
+              : null,
           },
           alerts,
           recentSamples: {
@@ -261,6 +285,24 @@ export class WebServer {
       } catch (error) {
         logger.warn({ err: error }, 'Failed to build clip registry debug diagnostics');
         res.status(500).json({ error: 'Failed to build clip registry debug diagnostics' });
+      }
+    });
+
+    this.app.post('/api/debug/startup-recovery/clear', (_req: Request, res: Response) => {
+      try {
+        stateManager.writeStartupRecoveryStatus({
+          updatedAt: Date.now(),
+          transferSessionRecovered: false,
+          clipRegistryRecoveredTransferring: 0,
+        });
+
+        res.json({
+          ok: true,
+          message: 'Startup recovery status cleared',
+        });
+      } catch (error) {
+        logger.warn({ err: error }, 'Failed to clear startup recovery status');
+        res.status(500).json({ error: 'Failed to clear startup recovery status' });
       }
     });
 

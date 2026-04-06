@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Snapshot } from '../../types';
+import { ClipRegistry, Snapshot } from '../../types';
 import { blake2s256 } from '../shared';
 import { ClipDiscoveryResult } from './clip-discovery-manager';
 import { ClipRegistryManager } from './clip-registry-manager';
@@ -46,6 +46,44 @@ function discovery(rootPath: string, relPath: string, snap: Snapshot): ClipDisco
 }
 
 describe('ClipRegistryManager', () => {
+  it('recovers stale transferring entries to failed at startup', () => {
+    const initialRegistry: ClipRegistry = {
+      updatedAt: 100,
+      entries: [
+        {
+          key: 'k1',
+          clipName: 'a.mp4',
+          relPath: 'RecentClips/a.mp4',
+          firstSeenSnapshotId: 'snap-1',
+          firstSeenSnapshotCreatedAt: 100,
+          firstSeenAt: 100,
+          preferredSnapshotId: 'snap-1',
+          preferredRootPath: '/backingfiles/snapshots/snap-1/mnt/TeslaCam',
+          preferredSnapshotCreatedAt: 100,
+          status: 'transferring',
+          isSymlink: true,
+          ageSec: 10,
+          updatedAt: 100,
+          lastAttemptAt: 100,
+        },
+      ],
+    };
+
+    const persisted: ClipRegistry[] = [];
+    const manager = new ClipRegistryManager({
+      initialRegistry,
+      persistRegistry: (registry) => persisted.push(registry),
+    });
+
+    const recovered = manager.snapshotRegistry().entries.find((entry) => entry.key === 'k1');
+    expect(recovered?.status).toBe('failed');
+    expect(persisted.length).toBe(1);
+
+    const next = manager.nextClipForTransfer();
+    expect(next?.key).toBe('k1');
+    expect(next?.status).toBe('failed');
+  });
+
   it('tracks first-seen snapshot while preferring newest source snapshot for transfer', async () => {
     const released: string[] = [];
     const manager = new ClipRegistryManager();

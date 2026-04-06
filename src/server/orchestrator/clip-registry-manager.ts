@@ -15,12 +15,39 @@ interface ClipRegistryManagerOptions {
 export class ClipRegistryManager {
   private readonly entriesByKey = new Map<string, ClipRegistryEntry>();
   private readonly snapshotRefs = new Map<string, SnapshotRef>();
+  private readonly recoveredTransferringAtStartup: number;
 
   constructor(private readonly options: ClipRegistryManagerOptions = {}) {
     const initial = options.initialRegistry;
+    const now = Date.now();
+    let recoveredTransferring = 0;
     for (const entry of initial?.entries ?? []) {
-      this.entriesByKey.set(entry.key, { ...entry });
+      const hydrated = { ...entry };
+      if (hydrated.status === 'transferring') {
+        hydrated.status = 'failed';
+        hydrated.updatedAt = now;
+        recoveredTransferring += 1;
+      }
+
+      this.entriesByKey.set(hydrated.key, hydrated);
     }
+
+    this.recoveredTransferringAtStartup = recoveredTransferring;
+
+    if (recoveredTransferring > 0) {
+      this.persist();
+      logger.warn(
+        {
+          recoveredTransferring,
+          registryEntriesTotal: this.entriesByKey.size,
+        },
+        'Recovered stale transferring clip registry entries at startup',
+      );
+    }
+  }
+
+  startupRecoveredTransferringCount(): number {
+    return this.recoveredTransferringAtStartup;
   }
 
   async ingestDiscovery(result: ClipDiscoveryResult): Promise<void> {

@@ -420,6 +420,17 @@ code {
   font-size: 0.95em;
 }
 
+.diag-section-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.diag-section-title-row h3 {
+  margin: 0;
+}
+
 .diag-empty {
   margin: 0;
   color: #8b949e;

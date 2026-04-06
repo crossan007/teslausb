@@ -62,6 +62,11 @@ type DebugPayload = {
       currentFilePath?: string;
       updatedAt: number;
     } | null;
+    startupRecovery: {
+      updatedAt: number;
+      transferSessionRecovered: boolean;
+      clipRegistryRecoveredTransferring: number;
+    } | null;
   };
   alerts: Array<{
     level: 'info' | 'warning';
@@ -89,6 +94,7 @@ function topRows(rows: SnapshotSummary[], max = 6): SnapshotSummary[] {
 
 export default function DiagnosticsComponent() {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
+  const [clearState, setClearState] = useState<'idle' | 'ok' | 'error'>('idle');
   const { data, loading, error } = useApi<DebugPayload>('/api/debug/clip-registry?limit=20', {
     interval: 5000,
   });
@@ -140,6 +146,26 @@ export default function DiagnosticsComponent() {
 
     window.setTimeout(() => {
       setCopyState('idle');
+    }, 1800);
+  }
+
+  async function clearStartupRecovery(): Promise<void> {
+    try {
+      const response = await window.fetch('/api/debug/startup-recovery/clear', {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      setClearState('ok');
+    } catch {
+      setClearState('error');
+    }
+
+    window.setTimeout(() => {
+      setClearState('idle');
     }, 1800);
   }
 
@@ -235,6 +261,26 @@ export default function DiagnosticsComponent() {
             <span>{data.runtime.activeSnapshot.isLinked ? 'Mounted' : 'Not mounted'}</span>
           </div>
         )}
+      </div>
+
+      <div className="diag-section">
+        <div className="diag-section-title-row">
+          <h3>Startup Recovery</h3>
+          <button type="button" className="diag-copy-btn" onClick={clearStartupRecovery}>
+            Clear
+          </button>
+        </div>
+        {!data.runtime.startupRecovery ? (
+          <p className="diag-empty">No startup recovery record.</p>
+        ) : (
+          <div className="diag-runtime-row">
+            <span>Recorded: {formatTs(data.runtime.startupRecovery.updatedAt)}</span>
+            <span>Session recovered: {data.runtime.startupRecovery.transferSessionRecovered ? 'yes' : 'no'}</span>
+            <span>Registry entries recovered: {data.runtime.startupRecovery.clipRegistryRecoveredTransferring}</span>
+          </div>
+        )}
+        {clearState === 'ok' && <div className="diag-copy-feedback">Startup recovery record cleared.</div>}
+        {clearState === 'error' && <div className="diag-copy-feedback error">Clear failed.</div>}
       </div>
 
       <div className="diag-section">

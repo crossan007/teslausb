@@ -66,6 +66,14 @@ export const PendingClipsSchema = z.object({
 
 export type PendingClips = z.infer<typeof PendingClipsSchema>;
 
+export const StartupRecoveryStatusSchema = z.object({
+  updatedAt: z.number(),
+  transferSessionRecovered: z.boolean().default(false),
+  clipRegistryRecoveredTransferring: z.number().default(0),
+});
+
+export type StartupRecoveryStatus = z.infer<typeof StartupRecoveryStatusSchema>;
+
 /**
  * Cached network health sample from periodic gateway checks.
  */
