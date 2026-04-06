@@ -118,6 +118,8 @@ export class SystemStatusManager {
     packetLoss: number;
   } | null> {
     try {
+      const gateway = await this.getEffectiveGateway();
+
       // Bound ping latency so /api/system-status stays responsive even when gateway is unreachable.
       // -n: numeric output (no reverse DNS)
       // -c 2: two probes
@@ -133,13 +135,13 @@ export class SystemStatusManager {
         '1',
         '-w',
         '3',
-        this.defaultGateway,
+        gateway,
       ], {
         timeout: 4000,
       });
 
       if (result.code !== 0) {
-        logger.debug({ gateway: this.defaultGateway }, 'Ping failed');
+        logger.debug({ gateway }, 'Ping failed');
         return null;
       }
 
@@ -163,6 +165,39 @@ export class SystemStatusManager {
       };
     } catch (error) {
       logger.debug({ err: error }, 'Failed to measure network health');
+      return null;
+    }
+  }
+
+  private async getEffectiveGateway(): Promise<string> {
+    const discoveredGateway = await this.discoverDefaultGateway();
+    return discoveredGateway ?? this.defaultGateway;
+  }
+
+  private async discoverDefaultGateway(): Promise<string | null> {
+    try {
+      const result = await this.commandRunner.run('ip', ['-4', 'route', 'show', 'default'], {
+        timeout: 2000,
+      });
+      if (result.code !== 0) {
+        return null;
+      }
+
+      const lines = result.stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+
+      for (const line of lines) {
+        const match = line.match(/\bvia\s+((?:\d{1,3}\.){3}\d{1,3})\b/);
+        if (match) {
+          return match[1];
+        }
+      }
+
+      return null;
+    } catch (error) {
+      logger.debug({ err: error }, 'Failed to discover default gateway');
       return null;
     }
   }

@@ -14,6 +14,13 @@ describe('SystemStatusManager', () => {
   it('returns system status with required fields', async () => {
     // df output for /mutable
     mockRun.mockImplementation(async (cmd: string, args: string[]) => {
+      if (cmd === 'ip') {
+        return {
+          code: 0,
+          stdout: 'default via 10.0.0.1 dev wlan0 proto dhcp src 10.0.0.5 metric 600\n',
+          stderr: '',
+        };
+      }
       if (cmd === 'df') {
         return {
           code: 0,
@@ -52,6 +59,13 @@ describe('SystemStatusManager', () => {
 
   it('returns status with nullish network fields when ping fails', async () => {
     mockRun.mockImplementation(async (cmd: string) => {
+      if (cmd === 'ip') {
+        return {
+          code: 0,
+          stdout: 'default via 10.0.0.1 dev wlan0 proto dhcp src 10.0.0.5 metric 600\n',
+          stderr: '',
+        };
+      }
       if (cmd === 'df') {
         return {
           code: 0,
