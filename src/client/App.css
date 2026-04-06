@@ -367,13 +367,20 @@ code {
 
 .file-item {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.4rem;
   padding: 0.5rem;
   font-size: 0.85em;
   margin: 0.25rem 0;
   border-radius: 4px;
   transition: background-color 0.2s;
+}
+
+.file-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
 }
 
 .file-item.status-archived {
@@ -417,6 +424,10 @@ code {
   min-width: 35px;
   text-align: right;
   color: #79c0ff;
+}
+
+.file-progress-bar {
+  width: 100%;
 }
 
 .more-files {

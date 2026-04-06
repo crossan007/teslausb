@@ -62,17 +62,27 @@ export default function SnapshotsComponent({ wsMessage, wsConnected }: Props) {
                 <ul>
                   {snap.filesInProgress.slice(0, 5).map((file) => (
                     <li key={file.relPath} className={`file-item status-${file.status}`}>
-                      <span className="file-path">{file.relPath}</span>
-                      <span className="file-status">
-                        {file.status === 'archived' && '✓'}
-                        {file.status === 'transferred' && '🔄'}
-                        {file.status === 'pending' && '⏳'}
-                        {file.status === 'failed' && '✗'}
-                      </span>
-                      {file.progressPercent !== undefined && (
-                        <span className="file-progress">
-                          {file.progressPercent}%
+                      <div className="file-row">
+                        <span className="file-path">{file.relPath}</span>
+                        <span className="file-status">
+                          {file.status === 'archived' && '✓'}
+                          {file.status === 'transferring' && '🔄'}
+                          {file.status === 'pending' && '⏳'}
+                          {file.status === 'failed' && '✗'}
                         </span>
+                        {file.progressPercent !== undefined && (
+                          <span className="file-progress">
+                            {file.progressPercent}%
+                          </span>
+                        )}
+                      </div>
+                      {file.progressPercent !== undefined && (
+                        <div className="progress-bar small file-progress-bar">
+                          <div
+                            className="progress-fill"
+                            style={{ width: `${Math.max(0, Math.min(100, file.progressPercent))}%` }}
+                          />
+                        </div>
                       )}
                     </li>
                   ))}

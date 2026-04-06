@@ -7,6 +7,31 @@ interface Props {
   wsConnected: boolean;
 }
 
+function normalizeEpochSeconds(epoch?: number): number | undefined {
+  if (epoch === undefined || !Number.isFinite(epoch) || epoch <= 0) {
+    return undefined;
+  }
+
+  if (epoch > 1e12) {
+    return Math.floor(epoch / 1000);
+  }
+
+  return Math.floor(epoch);
+}
+
+function formatDuration(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+
+  return `${minutes}m ${seconds}s`;
+}
+
 export default function TransferSessionComponent({ wsMessage, wsConnected }: Props) {
   const { data: restData } = useApi<TransferSessionView>(
     '/api/transfer-session',
@@ -36,12 +61,20 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
     );
   }
 
-  let startedTime = '';
+  let elapsedText: string | undefined;
+  let countdownText: string | undefined;
+
   if (session.startedAtEpoch && session.isActive) {
-    const elapsed = Math.floor((Date.now() / 1000) - session.startedAtEpoch);
-    const minutes = Math.floor(elapsed / 60);
-    const seconds = elapsed % 60;
-    startedTime = ` - Elapsed: ${minutes}m ${seconds}s`;
+    const startedAtSeconds = normalizeEpochSeconds(session.startedAtEpoch);
+    if (startedAtSeconds !== undefined) {
+      const elapsedSeconds = Math.max(0, Math.floor(Date.now() / 1000) - startedAtSeconds);
+      elapsedText = `Elapsed: ${formatDuration(elapsedSeconds)}`;
+    }
+  }
+
+  if (session.remainingSeconds !== undefined && Number.isFinite(session.remainingSeconds)) {
+    const safeRemaining = Math.max(0, Math.floor(session.remainingSeconds));
+    countdownText = `Remaining: ${formatDuration(safeRemaining)}`;
   }
 
   const progressBar = (
@@ -70,7 +103,11 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
           <strong>
             {session.isActive ? '🔄 Transferring' : '⏸️ Idle'}
           </strong>
-          <span className="session-time">{startedTime}</span>
+          {(elapsedText || countdownText) && (
+            <span className="session-time">
+              {[elapsedText, countdownText].filter(Boolean).join(' • ')}
+            </span>
+          )}
         </div>
       </div>
 
