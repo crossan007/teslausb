@@ -32,6 +32,11 @@ export default function SystemStatusComponent({ wsMessage, wsConnected }: Props)
   const uptimeHours = Math.floor(data.uptime / 3600);
   const uptimeMinutes = Math.floor((data.uptime % 3600) / 60);
 
+  const unloadedPingMs = data.pingUnloadedMs ?? data.pingTimeMs;
+  const unloadedLoss = data.packetLossUnloaded ?? data.packetLoss;
+  const loadedPingMs = data.pingLoadedMs;
+  const loadedLoss = data.packetLossLoaded;
+
   const totalGB = (data.totalSpace / (1024 ** 3)).toFixed(1);
   const freeGB = (data.freeSpace / (1024 ** 3)).toFixed(1);
   const usedPercent = ((1 - data.freeSpace / data.totalSpace) * 100).toFixed(1);
@@ -65,9 +70,14 @@ export default function SystemStatusComponent({ wsMessage, wsConnected }: Props)
 
         <div className="status-item">
           <label>Network Ping</label>
-          <value>{data.pingTimeMs?.toFixed(1) ?? 'N/A'}ms</value>
+          <value>{unloadedPingMs?.toFixed(1) ?? 'N/A'}ms</value>
           <small>
-            {data.packetLoss ? `${data.packetLoss}% loss` : 'optimal'}
+            Unloaded: {unloadedPingMs?.toFixed(1) ?? 'N/A'}ms
+            {unloadedLoss !== undefined ? ` (${unloadedLoss}% loss)` : ''}
+          </small>
+          <small>
+            Loaded: {loadedPingMs?.toFixed(1) ?? 'N/A'}ms
+            {loadedLoss !== undefined ? ` (${loadedLoss}% loss)` : ''}
           </small>
         </div>
 
