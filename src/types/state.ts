@@ -74,6 +74,14 @@ export const StartupRecoveryStatusSchema = z.object({
 
 export type StartupRecoveryStatus = z.infer<typeof StartupRecoveryStatusSchema>;
 
+export const SnapshotPruningStatusSchema = z.object({
+  updatedAt: z.number(),
+  lastPrunedSnapshotIds: z.array(z.string()).default([]),
+  totalPruned: z.number().default(0),
+});
+
+export type SnapshotPruningStatus = z.infer<typeof SnapshotPruningStatusSchema>;
+
 /**
  * Cached network health sample from periodic gateway checks.
  */

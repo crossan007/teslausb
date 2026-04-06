@@ -67,6 +67,11 @@ type DebugPayload = {
       transferSessionRecovered: boolean;
       clipRegistryRecoveredTransferring: number;
     } | null;
+    snapshotPruning: {
+      updatedAt: number;
+      totalPruned: number;
+      lastPrunedSnapshotIds: string[];
+    } | null;
   };
   alerts: Array<{
     level: 'info' | 'warning';
@@ -94,7 +99,8 @@ function topRows(rows: SnapshotSummary[], max = 6): SnapshotSummary[] {
 
 export default function DiagnosticsComponent() {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
-  const [clearState, setClearState] = useState<'idle' | 'ok' | 'error'>('idle');
+  const [startupClearState, setStartupClearState] = useState<'idle' | 'ok' | 'error'>('idle');
+  const [pruningClearState, setPruningClearState] = useState<'idle' | 'ok' | 'error'>('idle');
   const { data, loading, error } = useApi<DebugPayload>('/api/debug/clip-registry?limit=20', {
     interval: 5000,
   });
@@ -159,13 +165,33 @@ export default function DiagnosticsComponent() {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      setClearState('ok');
+      setStartupClearState('ok');
     } catch {
-      setClearState('error');
+      setStartupClearState('error');
     }
 
     window.setTimeout(() => {
-      setClearState('idle');
+      setStartupClearState('idle');
+    }, 1800);
+  }
+
+  async function clearSnapshotPruning(): Promise<void> {
+    try {
+      const response = await window.fetch('/api/debug/snapshot-pruning/clear', {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      setPruningClearState('ok');
+    } catch {
+      setPruningClearState('error');
+    }
+
+    window.setTimeout(() => {
+      setPruningClearState('idle');
     }, 1800);
   }
 
@@ -204,6 +230,9 @@ export default function DiagnosticsComponent() {
       data.runtime.startupRecovery.transferSessionRecovered ||
       data.runtime.startupRecovery.clipRegistryRecoveredTransferring > 0
     ),
+  );
+  const hasSnapshotPruningToClear = Boolean(
+    data.runtime.snapshotPruning && data.runtime.snapshotPruning.totalPruned > 0,
   );
 
   return (
@@ -287,8 +316,41 @@ export default function DiagnosticsComponent() {
             <span>Registry entries recovered: {data.runtime.startupRecovery.clipRegistryRecoveredTransferring}</span>
           </div>
         )}
-        {clearState === 'ok' && <div className="diag-copy-feedback">Startup recovery record cleared.</div>}
-        {clearState === 'error' && <div className="diag-copy-feedback error">Clear failed.</div>}
+        {startupClearState === 'ok' && <div className="diag-copy-feedback">Startup recovery record cleared.</div>}
+        {startupClearState === 'error' && <div className="diag-copy-feedback error">Clear failed.</div>}
+      </div>
+
+      <div className="diag-section">
+        <div className="diag-section-title-row">
+          <h3>Snapshot Pruning</h3>
+          {hasSnapshotPruningToClear && (
+            <button type="button" className="diag-copy-btn" onClick={clearSnapshotPruning}>
+              Clear
+            </button>
+          )}
+        </div>
+        {!data.runtime.snapshotPruning ? (
+          <p className="diag-empty">No snapshot pruning recorded yet.</p>
+        ) : (
+          <>
+            <div className="diag-runtime-row">
+              <span>Recorded: {formatTs(data.runtime.snapshotPruning.updatedAt)}</span>
+              <span>Total pruned: {data.runtime.snapshotPruning.totalPruned}</span>
+            </div>
+            {data.runtime.snapshotPruning.lastPrunedSnapshotIds.length > 0 && (
+              <ul className="diag-rows">
+                {data.runtime.snapshotPruning.lastPrunedSnapshotIds.map((snapshotId) => (
+                  <li key={`pruned-${snapshotId}`}>
+                    <span>{snapshotId}</span>
+                    <span>pruned</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+        {pruningClearState === 'ok' && <div className="diag-copy-feedback">Snapshot pruning record cleared.</div>}
+        {pruningClearState === 'error' && <div className="diag-copy-feedback error">Clear failed.</div>}
       </div>
 
       <div className="diag-section">

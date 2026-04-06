@@ -197,6 +197,7 @@ export async function startOrchestrator(config: TeslaUSBConfig): Promise<Orchest
     {
       eventBus,
       clipRegistryManager,
+      snapshotManager,
     },
   );
 

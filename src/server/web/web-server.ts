@@ -145,6 +145,7 @@ export class WebServer {
         const transferSession = stateManager.readTransferSession();
         const snapshotState = stateManager.readSnapshot();
         const startupRecovery = stateManager.readStartupRecoveryStatus();
+        const snapshotPruning = stateManager.readSnapshotPruningStatus();
 
         const entries = registry?.entries ?? [];
         const statusCounts = this.buildStatusCounts(entries);
@@ -228,6 +229,14 @@ export class WebServer {
           });
         }
 
+        if ((snapshotPruning?.totalPruned ?? 0) > 0) {
+          alerts.push({
+            level: 'info',
+            code: 'snapshot_pruning_performed',
+            message: `Most recent prune removed ${snapshotPruning?.totalPruned ?? 0} snapshots`,
+          });
+        }
+
         res.json({
           generatedAt: Date.now(),
           summary: {
@@ -275,6 +284,13 @@ export class WebServer {
                   clipRegistryRecoveredTransferring: startupRecovery.clipRegistryRecoveredTransferring,
                 }
               : null,
+            snapshotPruning: snapshotPruning
+              ? {
+                  updatedAt: snapshotPruning.updatedAt,
+                  totalPruned: snapshotPruning.totalPruned,
+                  lastPrunedSnapshotIds: snapshotPruning.lastPrunedSnapshotIds,
+                }
+              : null,
           },
           alerts,
           recentSamples: {
@@ -303,6 +319,24 @@ export class WebServer {
       } catch (error) {
         logger.warn({ err: error }, 'Failed to clear startup recovery status');
         res.status(500).json({ error: 'Failed to clear startup recovery status' });
+      }
+    });
+
+    this.app.post('/api/debug/snapshot-pruning/clear', (_req: Request, res: Response) => {
+      try {
+        stateManager.writeSnapshotPruningStatus({
+          updatedAt: Date.now(),
+          totalPruned: 0,
+          lastPrunedSnapshotIds: [],
+        });
+
+        res.json({
+          ok: true,
+          message: 'Snapshot pruning status cleared',
+        });
+      } catch (error) {
+        logger.warn({ err: error }, 'Failed to clear snapshot pruning status');
+        res.status(500).json({ error: 'Failed to clear snapshot pruning status' });
       }
     });
 

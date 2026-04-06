@@ -11,6 +11,7 @@ import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend } from '../../types/archive';
 import { ArchiveEventBus, ArchiveEventBusLike } from './events';
 import { ClipRegistryManager } from './clip-registry-manager';
+import { SnapshotManager } from './snapshot-manager';
 
 /**
  * Structural contract expected from any discovery source (snapshot consumer, test fake, etc.).
@@ -75,6 +76,8 @@ export class RuntimeLifecycleLoop {
   private readonly eventBus: ArchiveEventBusLike;
   /** Clip registry source-of-truth owning transfer eligibility and snapshot release. */
   private readonly clipRegistryManager: ClipRegistryManager;
+  /** Snapshot manager for pruning obsolete snapshots. */
+  private readonly snapshotManager?: SnapshotManager;
 
   /**
    * Builds a runtime lifecycle loop instance.
@@ -91,12 +94,14 @@ export class RuntimeLifecycleLoop {
       runtimeLogger?: RuntimeLifecycleLogger;
       eventBus?: ArchiveEventBusLike;
       clipRegistryManager?: ClipRegistryManager;
+      snapshotManager?: SnapshotManager;
     },
   ) {
     this.syncStatusWriter = dependencies?.syncStatusWriter ?? stateManager;
     this.runtimeLogger = dependencies?.runtimeLogger ?? logger;
     this.eventBus = dependencies?.eventBus ?? new ArchiveEventBus();
     this.clipRegistryManager = dependencies?.clipRegistryManager ?? new ClipRegistryManager();
+    this.snapshotManager = dependencies?.snapshotManager;
   }
 
   /**
@@ -144,7 +149,45 @@ export class RuntimeLifecycleLoop {
     }
 
     await this.clipRegistryManager.ingestDiscovery(discoveryResult);
+    await this.pruneObsoleteSnapshots();
     await this.drainTransferQueue();
+  }
+
+  /**
+   * Prunes snapshots between oldest-with-active-transfers and newest
+   * that contain only files also present in newer snapshots.
+   */
+  private async pruneObsoleteSnapshots(): Promise<void> {
+    if (!this.snapshotManager) {
+      return;
+    }
+
+    const prunableIds = this.clipRegistryManager.identifyPrunableSnapshots();
+    if (prunableIds.length === 0) {
+      return;
+    }
+
+    stateManager.writeSnapshotPruningStatus({
+      updatedAt: Date.now(),
+      lastPrunedSnapshotIds: prunableIds,
+      totalPruned: prunableIds.length,
+    });
+
+    for (const snapshotId of prunableIds) {
+      try {
+        await this.snapshotManager.releaseSnapshot(snapshotId);
+        this.clipRegistryManager.onSnapshotPruned(snapshotId);
+        this.runtimeLogger.info(
+          { snapshotId, totalPruned: prunableIds.length },
+          'Pruned obsolete snapshot with redundant files',
+        );
+      } catch (error) {
+        this.runtimeLogger.warn(
+          { err: error, snapshotId },
+          'Failed to prune obsolete snapshot',
+        );
+      }
+    }
   }
 
   /**

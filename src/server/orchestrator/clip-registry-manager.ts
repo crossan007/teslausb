@@ -216,6 +216,115 @@ export class ClipRegistryManager {
     };
   }
 
+  /**
+   * Identifies snapshots between the oldest-with-active-transfers and the newest
+   * that can be pruned because all their un-transferred files also exist in
+   * newer snapshots. Preserves the oldest-with-active-transfers and the newest.
+   *
+   * Algorithm:
+   * 1. Find oldest snapshot that has any un-transferred files (status: pending/transferring/failed)
+   * 2. Get all unique snapshot IDs from registry entries (both firstSeenSnapshotId and preferredSnapshotId)
+   * 3. For each snapshot between oldest-with-active and newest-1:
+   *    - Collect all un-transferred files first-seen in this snapshot
+   *    - Check if all those files appear elsewhere in the registry (different snapshot)
+   *    - If yes, and not the oldest or newest, mark for pruning
+   *
+   * Returns array of snapshot IDs that can be safely released.
+   */
+  identifyPrunableSnapshots(): string[] {
+    const allEntries = Array.from(this.entriesByKey.values());
+
+    const snapshotOrder = new Map<string, number>();
+    for (const entry of allEntries) {
+      const firstSeenTs = entry.firstSeenSnapshotCreatedAt ?? 0;
+      const preferredTs = entry.preferredSnapshotCreatedAt ?? 0;
+
+      snapshotOrder.set(
+        entry.firstSeenSnapshotId,
+        Math.max(snapshotOrder.get(entry.firstSeenSnapshotId) ?? 0, firstSeenTs),
+      );
+      snapshotOrder.set(
+        entry.preferredSnapshotId,
+        Math.max(snapshotOrder.get(entry.preferredSnapshotId) ?? 0, preferredTs),
+      );
+    }
+
+    if (snapshotOrder.size < 3) {
+      // Need at least 3 snapshots to prune (oldest-active, middle, newest)
+      return [];
+    }
+
+    // Sort snapshots by created-at timestamp (oldest to newest).
+    const sortedSnapshots = Array.from(snapshotOrder.entries())
+      .sort((left, right) => {
+        if (left[1] !== right[1]) {
+          return left[1] - right[1];
+        }
+        return left[0].localeCompare(right[0]);
+      })
+      .map(([snapshotId]) => snapshotId);
+
+    const snapshotIndexById = new Map<string, number>();
+    for (let i = 0; i < sortedSnapshots.length; i += 1) {
+      snapshotIndexById.set(sortedSnapshots[i], i);
+    }
+
+    // Find oldest snapshot with un-transferred files
+    let oldestWithActiveTransfersIdx = sortedSnapshots.length - 1;
+    for (let i = 0; i < sortedSnapshots.length; i++) {
+      const snapshotId = sortedSnapshots[i];
+      const hasUnTransferred = allEntries.some(
+        (e) => e.firstSeenSnapshotId === snapshotId && e.status !== 'transferred',
+      );
+      if (hasUnTransferred) {
+        oldestWithActiveTransfersIdx = i;
+        break;
+      }
+    }
+
+    const newestSnapshotIdx = sortedSnapshots.length - 1;
+
+    // Collect candidates to prune: between oldest-active+1 and newest-1
+    const prunableSnapshots: string[] = [];
+    for (let i = oldestWithActiveTransfersIdx + 1; i < newestSnapshotIdx; i++) {
+      const candidateId = sortedSnapshots[i];
+
+      // Get all un-transferred files first-seen in this candidate snapshot
+      const unTransferredInCandidate = allEntries.filter(
+        (e) => e.firstSeenSnapshotId === candidateId && e.status !== 'transferred',
+      );
+
+      if (unTransferredInCandidate.length === 0) {
+        // No un-transferred files in this snapshot, safe to prune
+        prunableSnapshots.push(candidateId);
+        continue;
+      }
+
+      // Check if all un-transferred files in candidate exist in a newer snapshot
+      let allExistInNewer = true;
+      for (const candidateFile of unTransferredInCandidate) {
+        // File is available in newer snapshot if its preferred source snapshot is newer.
+        const preferredIdx = snapshotIndexById.get(candidateFile.preferredSnapshotId) ?? -1;
+        const existsInNewer = preferredIdx > i;
+        if (!existsInNewer) {
+          // This file is unique to this snapshot and not yet transferred
+          allExistInNewer = false;
+          break;
+        }
+      }
+
+      if (allExistInNewer) {
+        prunableSnapshots.push(candidateId);
+      }
+    }
+
+    return prunableSnapshots;
+  }
+
+  onSnapshotPruned(snapshotId: string): void {
+    this.snapshotRefs.delete(snapshotId);
+  }
+
   private ensureSnapshotRef(snapshot: Snapshot): void {
     const existing = this.snapshotRefs.get(snapshot.id);
     if (existing) {

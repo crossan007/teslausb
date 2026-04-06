@@ -21,6 +21,8 @@ import {
   ClipRegistrySchema,
   StartupRecoveryStatus,
   StartupRecoveryStatusSchema,
+  SnapshotPruningStatus,
+  SnapshotPruningStatusSchema,
 } from '../../types';
 import { ensureDir } from '../shared';
 
@@ -391,6 +393,44 @@ export class StateManager {
       logger.debug({ status }, 'Startup recovery status written');
     } catch (error) {
       logger.error({ err: error, status }, 'Failed to write startup recovery status');
+      throw error;
+    }
+  }
+
+  /**
+   * Read snapshot pruning status for diagnostics visibility.
+   */
+  readSnapshotPruningStatus(): SnapshotPruningStatus | null {
+    try {
+      const path = this.statePath('snapshot_pruning');
+      if (!existsSync(path)) {
+        return null;
+      }
+      const content = readFileSync(path, 'utf-8');
+      const data = JSON.parse(content);
+      const parsed = SnapshotPruningStatusSchema.safeParse(data);
+      if (!parsed.success) {
+        logger.warn({ issues: parsed.error.issues }, 'Invalid SnapshotPruningStatus format');
+        return null;
+      }
+      return parsed.data;
+    } catch (error) {
+      logger.warn({ error }, 'Failed to read snapshot pruning status');
+      return null;
+    }
+  }
+
+  /**
+   * Write snapshot pruning status for diagnostics visibility.
+   */
+  writeSnapshotPruningStatus(status: SnapshotPruningStatus): void {
+    try {
+      const path = this.statePath('snapshot_pruning');
+      ensureDir(dirname(path));
+      writeFileSync(path, JSON.stringify(status, null, 2), 'utf-8');
+      logger.debug({ status }, 'Snapshot pruning status written');
+    } catch (error) {
+      logger.error({ err: error, status }, 'Failed to write snapshot pruning status');
       throw error;
     }
   }
