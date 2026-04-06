@@ -93,15 +93,48 @@ export default function DiagnosticsComponent() {
     interval: 5000,
   });
 
+  async function copyTextWithFallback(text: string): Promise<boolean> {
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {
+        // Fall back to execCommand below.
+      }
+    }
+
+    try {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.setAttribute('readonly', '');
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-9999px';
+      textArea.style.opacity = '0';
+
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      textArea.setSelectionRange(0, textArea.value.length);
+
+      const copied = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      return copied;
+    } catch {
+      return false;
+    }
+  }
+
   async function copyPayload(): Promise<void> {
     if (!data) {
       return;
     }
 
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+    const payload = JSON.stringify(data, null, 2);
+    const copied = await copyTextWithFallback(payload);
+
+    if (copied) {
       setCopyState('copied');
-    } catch {
+    } else {
       setCopyState('error');
     }
 
@@ -152,7 +185,7 @@ export default function DiagnosticsComponent() {
 
       <div className="diag-meta">Generated {formatTs(data.generatedAt)}</div>
       {copyState === 'copied' && <div className="diag-copy-feedback">Copied diagnostics JSON.</div>}
-      {copyState === 'error' && <div className="diag-copy-feedback error">Copy failed.</div>}
+      {copyState === 'error' && <div className="diag-copy-feedback error">Copy failed (clipboard blocked by browser).</div>}
 
       <div className="diag-stats-grid">
         <div className="diag-stat">
