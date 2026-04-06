@@ -31,13 +31,6 @@ function discovery(rootPath: string, relPath: string, snap: Snapshot): ClipDisco
         isSymlink: true,
       },
     ],
-    filePaths: [relPath],
-    pendingClips: {
-      totalFiles: 1,
-      totalEvents: 1,
-      oldestAgeSec: 10,
-      files: [{ relPath, isSymlink: true, ageSec: 10 }],
-    },
     candidatesDiscovered: 1,
     candidatesFiltered: 0,
     previouslyArchivedRetained: 0,

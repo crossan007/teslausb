@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PendingClips, Snapshot } from '../../types';
+import { Snapshot } from '../../types';
 import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
 import { SnapshotDiscoveryConsumer } from './snapshot-discovery-consumer';
 import { ArchiveEvent } from './events';
@@ -35,15 +35,6 @@ class FakeDiscoveryManager extends ClipDiscoveryManager {
   }
 }
 
-function makePending(filePaths: string[]): PendingClips {
-  return {
-    totalFiles: filePaths.length,
-    totalEvents: 0,
-    oldestAgeSec: 0,
-    files: filePaths.map((path) => ({ relPath: path, isSymlink: true, ageSec: 0 })),
-  };
-}
-
 function makeResult(rootPath: string, filePaths: string[]): ClipDiscoveryResult {
   const clips = filePaths.map((filePath) => ({
     key: `b2s:${blake2s256(filePath)}`,
@@ -57,8 +48,6 @@ function makeResult(rootPath: string, filePaths: string[]): ClipDiscoveryResult 
   return {
     rootPath,
     clips,
-    filePaths,
-    pendingClips: makePending(filePaths),
     candidatesDiscovered: filePaths.length,
     candidatesFiltered: 0,
     previouslyArchivedRetained: 0,
@@ -109,8 +98,8 @@ describe('SnapshotDiscoveryConsumer', () => {
     consumer.stop();
 
     expect(received).toHaveLength(2);
-    expect(received[0].filePaths).toEqual(['SavedClips/a.mp4']);
-    expect(received[1].filePaths).toEqual(['SentryClips/b.mp4']);
+    expect(received[0].clips.map((clip) => clip.relPath)).toEqual(['SavedClips/a.mp4']);
+    expect(received[1].clips.map((clip) => clip.relPath)).toEqual(['SentryClips/b.mp4']);
   });
 
   it('does not emit when discovery returns no clips', async () => {
@@ -147,7 +136,7 @@ describe('SnapshotDiscoveryConsumer', () => {
 
     const received: string[][] = [];
     consumer.start();
-    consumer.discovered$.subscribe((r) => received.push(r.filePaths));
+    consumer.discovered$.subscribe((r) => received.push(r.clips.map((clip) => clip.relPath)));
 
     await snapshotReady(bus, ROOT_A);
     await snapshotReady(bus, ROOT_A);
@@ -171,7 +160,7 @@ describe('SnapshotDiscoveryConsumer', () => {
 
     const received: string[][] = [];
     consumer.start();
-    consumer.discovered$.subscribe((r) => received.push(r.filePaths));
+    consumer.discovered$.subscribe((r) => received.push(r.clips.map((clip) => clip.relPath)));
 
     await snapshotReady(bus, ROOT_A);
     await snapshotReady(bus, ROOT_A);

@@ -6,7 +6,7 @@ import { concatMap, Observable, Subscription } from 'rxjs';
 import { logger, stateManager } from '../core';
 import { CommandRunner, defaultCommandRunner } from '../shared/command-runner';
 import { DefaultSyncStatus, PendingClips, SyncStatus } from '../../types';
-import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
+import { buildPendingClips, ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend } from '../../types/archive';
 import { ArchiveEventBus, ArchiveEventBusLike } from './events';
@@ -298,7 +298,9 @@ export class RuntimeLifecycleLoop {
    * Legacy-compatible processing path for direct discovery batches without snapshot metadata.
    */
   private async handleDirectBatch(discoveryResult: ClipDiscoveryResult): Promise<void> {
-    const reachable = await this.waitUntilReachable(discoveryResult.pendingClips);
+    const filePaths = discoveryResult.clips.map((clip) => clip.relPath);
+    const pendingClips = buildPendingClips(discoveryResult.clips);
+    const reachable = await this.waitUntilReachable(pendingClips);
     if (!reachable) {
       return;
     }
@@ -307,8 +309,8 @@ export class RuntimeLifecycleLoop {
     await this.eventBus.publish({
       type: 'archive-start',
       occurredAtMs: Date.now(),
-      totalFiles: discoveryResult.pendingClips.totalFiles,
-      totalEvents: discoveryResult.pendingClips.totalEvents,
+      totalFiles: pendingClips.totalFiles,
+      totalEvents: pendingClips.totalEvents,
       triggerFilePaths: this.options.startTriggerFilePaths ?? [],
     });
     await this.sleepMs(Math.max(0, this.options.archiveDelaySec) * 1000);
@@ -321,7 +323,7 @@ export class RuntimeLifecycleLoop {
       try {
         cycleResult = await this.clipArchiveCoordinator.runArchiveCycle({
           fromPath: discoveryResult.rootPath,
-          files: discoveryResult.filePaths,
+          files: filePaths,
         });
         cycleSucceeded = Boolean(cycleResult && !cycleResult.skipped && cycleResult.failed === 0);
       } catch (error) {
@@ -330,7 +332,7 @@ export class RuntimeLifecycleLoop {
 
       const archivedNow = await this.discoveryManager.resolveArchivedFromSource(
         discoveryResult.rootPath,
-        discoveryResult.filePaths,
+        filePaths,
       );
 
       if (cycleSucceeded) {
@@ -340,7 +342,7 @@ export class RuntimeLifecycleLoop {
         }
       } else {
         this.runtimeLogger.info(
-          { filePaths: discoveryResult.filePaths.length },
+          { filePaths: filePaths.length },
           'Archive cycle did not succeed – skipping markArchived so files remain pending',
         );
       }
@@ -353,8 +355,8 @@ export class RuntimeLifecycleLoop {
       await this.eventBus.publish({
         type: 'archive-finish',
         occurredAtMs: Date.now(),
-        totalFiles: discoveryResult.pendingClips.totalFiles,
-        totalEvents: discoveryResult.pendingClips.totalEvents,
+        totalFiles: pendingClips.totalFiles,
+        totalEvents: pendingClips.totalEvents,
         archivedFiles: archivedMarkedCount,
         succeeded: cycleSucceeded,
         triggerFilePaths: cycleSucceeded ? (this.options.finishTriggerFilePaths ?? []) : [],

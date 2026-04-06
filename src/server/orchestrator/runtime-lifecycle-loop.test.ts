@@ -1,11 +1,11 @@
 import { Observable, Subject } from 'rxjs';
 import { describe, expect, it } from 'vitest';
-import { PendingClips, Snapshot, SyncStatus } from '../../types';
+import { Snapshot, SyncStatus } from '../../types';
 import { CommandResult, CommandRunner } from '../shared/command-runner';
 import { RuntimeLifecycleLoop } from './runtime-lifecycle-loop';
 import { ClipDiscoveryManager, ClipDiscoveryResult } from './clip-discovery-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
-import { ArchiveBackend } from '../../types/archive';
+import { ArchiveBackend, ArchiveTransferExecution, createCompletedTransferExecution } from '../../types/archive';
 import { ArchiveEvent } from './events';
 import { blake2s256 } from '../shared';
 
@@ -47,8 +47,11 @@ class FakeBackend implements ArchiveBackend {
     return;
   }
 
-  archiveClips() {
-    throw new Error('not used in this test');
+  archiveClips(_fromPath: string, filePaths: string[]): ArchiveTransferExecution {
+    return createCompletedTransferExecution(this.name, filePaths, {
+      archived: filePaths.length,
+      failed: 0,
+    });
   }
 
   async disconnect(): Promise<void> {
@@ -119,21 +122,6 @@ async function waitForCondition(predicate: () => boolean, timeoutMs = 1000): Pro
     }
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-}
-
-function pending(totalFiles = 1): PendingClips {
-  return {
-    totalFiles,
-    totalEvents: 1,
-    oldestAgeSec: 10,
-    files: [
-      {
-        relPath: 'SavedClips/evt1/file.mp4',
-        isSymlink: true,
-        ageSec: 10,
-      },
-    ],
-  };
 }
 
 function snapshotWithRelease(snapshotId: string, release: () => Promise<void>): Snapshot {
@@ -209,8 +197,6 @@ describe('RuntimeLifecycleLoop', () => {
     discoveryLoop.subject.next({
       rootPath,
       clips: [clip(relPath, rootPath)],
-      filePaths: [relPath],
-      pendingClips: pending(),
       candidatesDiscovered: 1,
       candidatesFiltered: 0,
       previouslyArchivedRetained: 0,
@@ -270,8 +256,6 @@ describe('RuntimeLifecycleLoop', () => {
     discoveryLoop.subject.next({
       rootPath,
       clips: [clip(relPath, rootPath)],
-      filePaths: [relPath],
-      pendingClips: pending(),
       candidatesDiscovered: 1,
       candidatesFiltered: 0,
       previouslyArchivedRetained: 0,
@@ -325,8 +309,6 @@ describe('RuntimeLifecycleLoop', () => {
     discoveryLoop.subject.next({
       rootPath,
       clips: [clip(relPath, rootPath)],
-      filePaths: [relPath],
-      pendingClips: pending(),
       candidatesDiscovered: 1,
       candidatesFiltered: 0,
       previouslyArchivedRetained: 0,
@@ -381,8 +363,6 @@ describe('RuntimeLifecycleLoop', () => {
     discoveryLoop.subject.next({
       rootPath,
       clips: [clip(relPathA, rootPath), clip(relPathB, rootPath)],
-      filePaths: [relPathA, relPathB],
-      pendingClips: pending(2),
       candidatesDiscovered: 2,
       candidatesFiltered: 0,
       previouslyArchivedRetained: 0,

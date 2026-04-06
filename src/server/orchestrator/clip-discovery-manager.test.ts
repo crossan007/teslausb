@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ClipDiscoveryManager } from './clip-discovery-manager';
+import { buildPendingClips, ClipDiscoveryManager } from './clip-discovery-manager';
 
 const tempDirs: string[] = [];
 
@@ -46,8 +46,8 @@ describe('ClipDiscoveryManager', () => {
       minClipSizeBytes: 100_000,
     });
 
-    expect(result.filePaths).toEqual(['SavedClips/evt1/host-dropped.mp4']);
-    expect(result.pendingClips.totalFiles).toBe(1);
+    expect(result.clips.map((clip) => clip.relPath)).toEqual(['SavedClips/evt1/host-dropped.mp4']);
+    expect(buildPendingClips(result.clips).totalFiles).toBe(1);
   });
 
   it('discovers pending clips, prunes archived, and skips short mp4 clips', async () => {
@@ -85,12 +85,12 @@ describe('ClipDiscoveryManager', () => {
       nowEpochSec: Math.floor(Date.now() / 1000),
     });
 
-    expect(result.filePaths).toEqual([
+    expect(result.clips.map((clip) => clip.relPath)).toEqual([
       'SentryClips/evt2/sentry-big.mp4',
       'TeslaTrackMode/lap1.csv',
     ]);
-    expect(result.pendingClips.totalFiles).toBe(2);
-    expect(result.pendingClips.totalEvents).toBe(1);
+    expect(buildPendingClips(result.clips).totalFiles).toBe(2);
+    expect(buildPendingClips(result.clips).totalEvents).toBe(1);
     expect(result.previouslyArchivedRetained).toBe(1);
     expect(result.candidatesFiltered).toBe(1);
 
@@ -121,7 +121,7 @@ describe('ClipDiscoveryManager', () => {
       includePredicate: (path) => path.endsWith('sentry.mp4'),
     });
 
-    expect(result.filePaths).toEqual(['SentryClips/evt1/sentry.mp4']);
+    expect(result.clips.map((clip) => clip.relPath)).toEqual(['SentryClips/evt1/sentry.mp4']);
   });
 
   it('marks archived files with deduplicated sorted output', async () => {

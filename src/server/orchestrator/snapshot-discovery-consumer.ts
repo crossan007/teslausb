@@ -2,14 +2,15 @@
  * Consumes immutable snapshot-ready events and emits one discovery result per snapshot scan root.
  */
 import { Observable, Subject } from 'rxjs';
-import { PendingClips, Snapshot } from '../../types';
+import { PendingClips } from '../../types';
 import { logger } from '../core/logger';
 import {
+  buildPendingClips,
   ClipDiscoveryManager,
   ClipDiscoveryOptions,
   ClipDiscoveryResult,
 } from './clip-discovery-manager';
-import { ArchiveEventBusLike } from './events';
+import { ArchiveEventBusLike, SnapshotReadyEvent } from './events';
 
 export interface SnapshotDiscoveryConsumerOptions extends Omit<ClipDiscoveryOptions, 'rootPath'> {
   emitOnChangeOnly?: boolean;
@@ -17,14 +18,9 @@ export interface SnapshotDiscoveryConsumerOptions extends Omit<ClipDiscoveryOpti
   eventBus: ArchiveEventBusLike;
 }
 
-interface SnapshotScanWorkItem {
-  rootPath: string;
-  snapshot: Snapshot;
-}
-
 export class SnapshotDiscoveryConsumer {
   private readonly eventsSubject = new Subject<ClipDiscoveryResult>();
-  private readonly pendingScanRoots: SnapshotScanWorkItem[] = [];
+  private readonly pendingScanRoots: SnapshotReadyEvent[] = [];
   private running = false;
   private processing = false;
   private lastEmittedFingerprint = '';
@@ -47,10 +43,7 @@ export class SnapshotDiscoveryConsumer {
         return;
       }
       logger.debug({ scanRootPath: event.scanRootPath }, 'snapshot-ready received by discovery consumer');
-      await this.consume({
-        rootPath: event.scanRootPath,
-        snapshot: event.snapshot,
-      });
+      await this.consume(event);
     });
     logger.debug('SnapshotDiscoveryConsumer started');
   }
@@ -63,8 +56,8 @@ export class SnapshotDiscoveryConsumer {
     this.eventsSubject.complete();
   }
 
-  async consume(item: SnapshotScanWorkItem): Promise<void> {
-    if (!item.rootPath) {
+  async consume(item: SnapshotReadyEvent): Promise<void> {
+    if (!item.scanRootPath) {
       return;
     }
 
@@ -87,8 +80,8 @@ export class SnapshotDiscoveryConsumer {
     }
   }
 
-  private async processRoot(item: SnapshotScanWorkItem): Promise<void> {
-    const rootPath = item.rootPath;
+  private async processRoot(item: SnapshotReadyEvent): Promise<void> {
+    const rootPath = item.scanRootPath;
     logger.info({ rootPath }, 'Discovery scan starting for snapshot root');
     try {
       const discoveryResult = await this.discoveryManager.discoverPending({
@@ -99,21 +92,21 @@ export class SnapshotDiscoveryConsumer {
         ...discoveryResult,
         snapshot: item.snapshot,
       };
+      const filePaths = result.clips.map((clip) => clip.relPath);
+      const pendingClips = buildPendingClips(result.clips);
 
-      this.options.persistPendingClips?.(result.pendingClips);
+      this.options.persistPendingClips?.(pendingClips);
       logger.info(
         {
           rootPath,
           candidatesDiscovered: result.candidatesDiscovered,
           candidatesFiltered: result.candidatesFiltered,
-          filePaths: result.filePaths.length,
+          filePaths: filePaths.length,
           previouslyArchivedRetained: result.previouslyArchivedRetained,
         },
         'Discovery scan complete',
       );
 
-
-      const filePaths = result.filePaths;
       if (filePaths.length > 0) {
         const fingerprint = `${result.rootPath}\n${filePaths.join('\n')}`;
         const emitOnChangeOnly = this.options.emitOnChangeOnly ?? true;

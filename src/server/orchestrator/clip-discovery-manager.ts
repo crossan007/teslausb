@@ -28,8 +28,6 @@ export interface ClipDiscoveryOptions {
 export interface ClipDiscoveryResult {
   rootPath: string;
   clips: ClipMetadata[];
-  filePaths: string[];
-  pendingClips: PendingClips;
   candidatesDiscovered: number;
   candidatesFiltered: number;
   previouslyArchivedRetained: number;
@@ -50,6 +48,33 @@ export interface ClipMetadata {
   isSymlink: boolean;
 }
 
+export function buildPendingClips(clips: ClipMetadata[]): PendingClips {
+  const eventDirs = new Set<string>();
+  for (const entry of clips) {
+    if (entry.relPath.startsWith('SavedClips/') || entry.relPath.startsWith('SentryClips/')) {
+      const index = entry.relPath.lastIndexOf('/');
+      if (index > 0) {
+        eventDirs.add(entry.relPath.slice(0, index));
+      }
+    }
+  }
+
+  const oldestAgeSec = clips.length === 0
+    ? 0
+    : clips.reduce((oldest, entry) => Math.max(oldest, entry.ageSec), 0);
+
+  return {
+    totalFiles: clips.length,
+    totalEvents: eventDirs.size,
+    oldestAgeSec,
+    files: clips.map((entry) => ({
+      relPath: entry.relPath,
+      isSymlink: entry.isSymlink,
+      ageSec: entry.ageSec,
+    })),
+  };
+}
+
 export class ClipDiscoveryManager {
   async discoverPending(options: ClipDiscoveryOptions): Promise<ClipDiscoveryResult> {
     const candidatePaths = await this.discoverCandidateSymlinks(options);
@@ -67,34 +92,9 @@ export class ClipDiscoveryManager {
     const pendingCandidates = candidatePaths.filter((path) => !retainedArchived.has(path));
     const metadata = await this.filterAndHydrateCandidates(pendingCandidates, options);
 
-    const eventDirs = new Set<string>();
-    for (const entry of metadata) {
-      if (entry.relPath.startsWith('SavedClips/') || entry.relPath.startsWith('SentryClips/')) {
-        const parentDir = this.parentDirectory(entry.relPath);
-        if (parentDir) {
-          eventDirs.add(parentDir);
-        }
-      }
-    }
-
-    const oldestAgeSec = metadata.length === 0
-      ? 0
-      : metadata.reduce((oldest, entry) => Math.max(oldest, entry.ageSec), 0);
-
     return {
       rootPath: options.rootPath,
       clips: metadata,
-      filePaths: metadata.map((entry) => entry.relPath),
-      pendingClips: {
-        totalFiles: metadata.length,
-        totalEvents: eventDirs.size,
-        oldestAgeSec,
-        files: metadata.map((entry) => ({
-          relPath: entry.relPath,
-          isSymlink: entry.isSymlink,
-          ageSec: entry.ageSec,
-        })),
-      },
       candidatesDiscovered: candidatePaths.length,
       candidatesFiltered: pendingCandidates.length - metadata.length,
       previouslyArchivedRetained: retainedArchived.size,
@@ -280,13 +280,5 @@ export class ClipDiscoveryManager {
     const lines = Array.from(archivedSet).sort();
     const payload = lines.length > 0 ? `${lines.join('\n')}\n` : '';
     await writeFile(archivedListPath, payload, 'utf-8');
-  }
-
-  private parentDirectory(path: string): string | null {
-    const index = path.lastIndexOf('/');
-    if (index <= 0) {
-      return null;
-    }
-    return path.slice(0, index);
   }
 }
