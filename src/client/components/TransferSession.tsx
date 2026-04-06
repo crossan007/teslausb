@@ -140,9 +140,12 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
       });
   }, [transferFiles, session]);
 
-  const activeFile =
-    allQueueFiles.find((file) => file.status === 'transferring') ??
-    session?.currentFile;
+  const activeFile = session?.isActive
+    ? (
+      allQueueFiles.find((file) => file.status === 'transferring') ??
+      session.currentFile
+    )
+    : undefined;
 
   const queuedFiles = allQueueFiles.filter((file) => file.status === 'pending');
   const queueDepth = queuedFiles.length;

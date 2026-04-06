@@ -95,15 +95,6 @@ export class TransferSessionViewService extends BaseViewService<TransferSessionV
       });
     }
 
-    for (const [relPath, file] of this.fileProgress.entries()) {
-      if (!session.files.some((sessionFile) => sessionFile.path === relPath)) {
-        this.fileProgress.set(relPath, {
-          ...file,
-          status: file.status === 'transferring' ? 'pending' : file.status,
-        });
-      }
-    }
-
     const currentFilePath = session.currentFilePath;
     this.currentSession.currentFile = currentFilePath
       ? this.fileProgress.get(currentFilePath)
