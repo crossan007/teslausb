@@ -110,16 +110,11 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
     return snapshotsRestData ?? [];
   }, [wsMessage, snapshotsRestData]);
 
-  if (!session) {
-    return (
-      <div className="panel transfer-session">
-        <h2>Transfer Session</h2>
-        <p>Idle</p>
-      </div>
-    );
-  }
-
   const sessionFiles = useMemo(() => {
+    if (!session) {
+      return [];
+    }
+
     const deduped = new Map<string, SnapshotView['filesInProgress'][number]>();
 
     snapshots.forEach((snapshot) => {
@@ -142,9 +137,18 @@ export default function TransferSessionComponent({ wsMessage, wsConnected }: Pro
         }
         return left.relPath.localeCompare(right.relPath);
       });
-  }, [snapshots, session.currentFile]);
+  }, [session, snapshots]);
 
   const activeFiles = sessionFiles.filter((file) => file.status === 'transferring');
+
+  if (!session) {
+    return (
+      <div className="panel transfer-session">
+        <h2>Transfer Session</h2>
+        <p>Idle</p>
+      </div>
+    );
+  }
 
   let elapsedText: string | undefined;
   let countdownText: string | undefined;
