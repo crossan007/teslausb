@@ -37,6 +37,8 @@ export interface RuntimeLifecycleLoopOptions {
   startTriggerFilePaths?: string[];
   /** Relative trigger file paths emitted at archive-finish (legacy-compatible default). */
   finishTriggerFilePaths?: string[];
+  /** Stop queue drain after this many consecutive transfer failures. Defaults to 3. */
+  maxConsecutiveTransferFailures?: number;
 }
 
 /**
@@ -149,6 +151,9 @@ export class RuntimeLifecycleLoop {
    * Continuously processes queued clips one-at-a-time until queue is empty.
    */
   private async drainTransferQueue(): Promise<void> {
+    const maxConsecutiveFailures = Math.max(1, this.options.maxConsecutiveTransferFailures ?? 3);
+    let consecutiveFailures = 0;
+
     while (true) {
       const nextClip = this.clipRegistryManager.nextClipForTransfer();
       if (!nextClip) {
@@ -198,13 +203,30 @@ export class RuntimeLifecycleLoop {
           archivedMarkedCount = 1;
           await this.discoveryManager.markArchived([nextClip.relPath], this.options.archivedListPath);
           await this.clipRegistryManager.markTransferred(nextClip.key);
+          consecutiveFailures = 0;
         } else {
           this.clipRegistryManager.markTransferFailed(nextClip.key);
+          consecutiveFailures += 1;
           this.runtimeLogger.info(
-            { relPath: nextClip.relPath, cycleSucceeded, archived },
+            {
+              relPath: nextClip.relPath,
+              cycleSucceeded,
+              archived,
+              consecutiveFailures,
+              maxConsecutiveFailures,
+            },
             'Queued clip transfer did not complete; leaving in queue',
           );
-          return;
+
+          if (consecutiveFailures >= maxConsecutiveFailures) {
+            this.runtimeLogger.warn(
+              { consecutiveFailures, maxConsecutiveFailures },
+              'Stopping queue drain after consecutive transfer failures',
+            );
+            return;
+          }
+
+          continue;
         }
 
         this.runtimeLogger.info(

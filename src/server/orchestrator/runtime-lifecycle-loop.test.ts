@@ -65,6 +65,21 @@ class FakeOrchestrator {
   }
 }
 
+class FakeOrchestratorSequence {
+  calls = 0;
+
+  constructor(private readonly sequence: Array<'success' | 'fail'>) {}
+
+  async runArchiveCycle() {
+    this.calls += 1;
+    const action = this.sequence.shift() ?? 'success';
+    if (action === 'fail') {
+      return { skipped: false, archived: 0, failed: 1 };
+    }
+    return { skipped: false, archived: 1, failed: 0 };
+  }
+}
+
 class FakeDiscoveryManager {
   marked: string[] = [];
 
@@ -267,6 +282,118 @@ describe('RuntimeLifecycleLoop', () => {
     expect(orchestrator.calls).toBe(0);
     expect(manager.marked).toEqual([]);
     expect(syncStatusWrites.at(-1)?.state).toBe('waiting');
+
+    loop.stop();
+  });
+
+  it('stops queue drain after 3 consecutive transfer failures', async () => {
+    const discoveryLoop = new FakeDiscoveryLoop();
+    const manager = new FakeDiscoveryManager();
+    const orchestrator = new FakeOrchestratorSequence(['fail', 'fail', 'fail', 'fail']);
+    const backend = new FakeBackend(1);
+    const warned: string[] = [];
+
+    const loop = new RuntimeLifecycleLoop(
+      discoveryLoop,
+      manager as unknown as ClipDiscoveryManager,
+      orchestrator as unknown as ClipArchiveCoordinator,
+      backend,
+      {
+        archivedListPath: '/mutable/sentry_files_archived',
+        archiveDelaySec: 0,
+        reachabilityPollMs: 1,
+        maxConsecutiveTransferFailures: 3,
+      },
+      new FakeCommandRunner(),
+      {
+        syncStatusWriter: {
+          writeSyncStatus: () => undefined,
+        },
+        runtimeLogger: {
+          info: () => undefined,
+          warn: (_payload: unknown, message?: string) => {
+            warned.push(message ?? '');
+          },
+          error: () => undefined,
+        },
+      },
+    );
+
+    loop.start();
+    const rootPath = '/backingfiles/snapshots/snap-000001/mnt/TeslaCam';
+    const relPath = 'SavedClips/evt1/file.mp4';
+    discoveryLoop.subject.next({
+      rootPath,
+      clips: [clip(relPath, rootPath)],
+      filePaths: [relPath],
+      pendingClips: pending(),
+      candidatesDiscovered: 1,
+      candidatesFiltered: 0,
+      previouslyArchivedRetained: 0,
+      snapshot: snapshotWithRelease('snap-000001', async () => undefined),
+    });
+
+    await waitForCondition(() => orchestrator.calls === 3, 1000);
+
+    expect(orchestrator.calls).toBe(3);
+    expect(warned).toContain('Stopping queue drain after consecutive transfer failures');
+
+    loop.stop();
+  });
+
+  it('resets consecutive failure counter after a success', async () => {
+    const discoveryLoop = new FakeDiscoveryLoop();
+    const manager = new FakeDiscoveryManager();
+    const orchestrator = new FakeOrchestratorSequence(['fail', 'success', 'fail', 'fail', 'fail']);
+    const backend = new FakeBackend(1);
+    const warned: string[] = [];
+
+    const loop = new RuntimeLifecycleLoop(
+      discoveryLoop,
+      manager as unknown as ClipDiscoveryManager,
+      orchestrator as unknown as ClipArchiveCoordinator,
+      backend,
+      {
+        archivedListPath: '/mutable/sentry_files_archived',
+        archiveDelaySec: 0,
+        reachabilityPollMs: 1,
+        maxConsecutiveTransferFailures: 3,
+      },
+      new FakeCommandRunner(),
+      {
+        syncStatusWriter: {
+          writeSyncStatus: () => undefined,
+        },
+        runtimeLogger: {
+          info: () => undefined,
+          warn: (_payload: unknown, message?: string) => {
+            warned.push(message ?? '');
+          },
+          error: () => undefined,
+        },
+      },
+    );
+
+    loop.start();
+    const rootPath = '/backingfiles/snapshots/snap-000001/mnt/TeslaCam';
+    const relPathA = 'SavedClips/evt1/a.mp4';
+    const relPathB = 'SavedClips/evt1/b.mp4';
+    discoveryLoop.subject.next({
+      rootPath,
+      clips: [clip(relPathA, rootPath), clip(relPathB, rootPath)],
+      filePaths: [relPathA, relPathB],
+      pendingClips: pending(2),
+      candidatesDiscovered: 2,
+      candidatesFiltered: 0,
+      previouslyArchivedRetained: 0,
+      snapshot: snapshotWithRelease('snap-000001', async () => undefined),
+    });
+
+    await waitForCondition(() => orchestrator.calls === 5, 1000);
+
+    expect(orchestrator.calls).toBe(5);
+    expect(manager.marked.length).toBe(1);
+    expect(warned).toContain('Stopping queue drain after consecutive transfer failures');
 
     loop.stop();
   });
