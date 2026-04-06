@@ -181,27 +181,158 @@ code {
 }
 
 /* Transfer Session */
-.session-header {
+.transfer-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 1rem;
 }
 
-.session-status {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 1.1em;
+.transfer-header h2 {
+  margin: 0;
 }
 
-.session-status strong {
+.transfer-header-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+  font-size: 0.9em;
+  color: #8b949e;
+}
+
+.status-active {
   color: #3fb950;
 }
 
-.session-time {
-  font-size: 0.9em;
+.status-idle {
   color: #8b949e;
+}
+
+.session-time {
+  font-size: 0.85em;
+  color: #8b949e;
+}
+
+.session-active-files {
+  background-color: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.session-active-files > label {
+  display: block;
+  font-weight: 600;
+  color: #e6edf3;
+  margin-bottom: 0.5rem;
+}
+
+.active-files-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.active-file-item {
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  padding: 0.5rem;
+}
+
+.active-file-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.active-file-status {
+  color: #79c0ff;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.active-file-name {
+  color: #e6edf3;
+  word-break: break-word;
+}
+
+.active-file-progress {
+  color: #79c0ff;
+  font-weight: 600;
+}
+
+.session-file-window {
+  border-top: 1px solid #30363d;
+  padding-top: 0.65rem;
+}
+
+.session-file-window-title {
+  color: #8b949e;
+  font-size: 0.85em;
+  margin-bottom: 0.45rem;
+}
+
+.session-file-table {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 140px;
+  overflow-y: auto;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+}
+
+.session-file-row {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid #21262d;
+  font-size: 0.85em;
+}
+
+.session-file-row:last-child {
+  border-bottom: none;
+}
+
+.session-file-state {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.session-file-path {
+  color: #c9d1d9;
+  word-break: break-word;
+}
+
+.session-file-row.status-archived .session-file-state {
+  color: #3fb950;
+}
+
+.session-file-row.status-transferring .session-file-state {
+  color: #79c0ff;
+}
+
+.session-file-row.status-pending .session-file-state {
+  color: #8b949e;
+}
+
+.session-file-row.status-failed .session-file-state {
+  color: #f85149;
+}
+
+.session-empty {
+  margin: 0;
+  color: #8b949e;
+  font-size: 0.9em;
 }
 
 .session-stats {
