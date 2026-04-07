@@ -180,6 +180,50 @@ code {
   margin-top: 0.25rem;
 }
 
+.status-item--wide {
+  grid-column: 1 / -1;
+}
+
+.partition-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.partition-card {
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 0.85rem 0.75rem;
+  text-align: center;
+}
+
+.partition-card-label {
+  display: block;
+  font-size: 0.78em;
+  color: #8b949e;
+  margin-bottom: 0.45rem;
+  text-transform: uppercase;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.partition-card-value {
+  display: block;
+  font-size: 1.4em;
+  font-weight: 700;
+  color: #3fb950;
+  margin-bottom: 0.25rem;
+}
+
+.partition-card small {
+  display: block;
+  font-size: 0.75em;
+  color: #8b949e;
+  line-height: 1.35;
+}
+
 /* Transfer Session */
 .transfer-header {
   display: flex;
