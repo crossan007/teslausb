@@ -240,24 +240,65 @@ describe('ClipRegistryManager', () => {
     ]);
   });
 
-    it('identifies pruneable snapshots with redundant files', async () => {
-      const manager = new ClipRegistryManager();
-      const snap1 = snapshot('snap-1', 100, async () => undefined);
-      const snap2 = snapshot('snap-2', 200, async () => undefined);
-      const snap3 = snapshot('snap-3', 300, async () => undefined);
+  it('processes non-metadata sentry clips before other non-sentry clips after metadata and saved tiers', async () => {
+    const manager = new ClipRegistryManager();
+    const snap1 = snapshot('snap-1', 100, async () => undefined);
+    const snap2 = snapshot('snap-2', 200, async () => undefined);
+    const snap3 = snapshot('snap-3', 300, async () => undefined);
 
-      // snap-1: discovers a.mp4 and b.mp4 (pending file)
-      await manager.ingestDiscovery(
-        discovery('/backingfiles/snapshots/snap-1/mnt/TeslaCam', 'SavedClips/a.mp4', snap1),
-      );
-      // snap-2: discovers same a.mp4 and unique c.mp4
-      await manager.ingestDiscovery(
-        discovery('/backingfiles/snapshots/snap-2/mnt/TeslaCam', 'SavedClips/a.mp4', snap2),
-      );
-      await manager.ingestDiscovery(
-        discovery('/backingfiles/snapshots/snap-2/mnt/TeslaCam', 'SavedClips/c.mp4', snap2),
-      );
-      // snap-3: discovers both a.mp4 and c.mp4 (newest snapshot has both)
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-1/mnt/TeslaCam', 'SavedClips/evt-a/event.json', snap1),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-1/mnt/TeslaCam', 'SavedClips/evt-a/front.mp4', snap1),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-2/mnt/TeslaCam', 'SentryClips/evt-z/event.mp4', snap2),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-2/mnt/TeslaCam', 'SentryClips/evt-z/front.mp4', snap2),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-3/mnt/TeslaCam', 'RecentClips/latest.mp4', snap3),
+    );
+
+    const order: string[] = [];
+    while (true) {
+      const next = manager.nextClipForTransfer();
+      if (!next) {
+        break;
+      }
+      order.push(next.relPath);
+      await manager.markTransferred(next.key);
+    }
+
+    expect(order).toEqual([
+      'SavedClips/evt-a/event.json',
+      'SentryClips/evt-z/event.mp4',
+      'SavedClips/evt-a/front.mp4',
+      'SentryClips/evt-z/front.mp4',
+      'RecentClips/latest.mp4',
+    ]);
+  });
+
+  it('identifies pruneable snapshots with redundant files', async () => {
+    const manager = new ClipRegistryManager();
+    const snap1 = snapshot('snap-1', 100, async () => undefined);
+    const snap2 = snapshot('snap-2', 200, async () => undefined);
+    const snap3 = snapshot('snap-3', 300, async () => undefined);
+
+    // snap-1: discovers a.mp4 and b.mp4 (pending file)
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-1/mnt/TeslaCam', 'SavedClips/a.mp4', snap1),
+    );
+    // snap-2: discovers same a.mp4 and unique c.mp4
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-2/mnt/TeslaCam', 'SavedClips/a.mp4', snap2),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-2/mnt/TeslaCam', 'SavedClips/c.mp4', snap2),
+    );
+    // snap-3: discovers both a.mp4 and c.mp4 (newest snapshot has both)
       await manager.ingestDiscovery(
         discovery('/backingfiles/snapshots/snap-3/mnt/TeslaCam', 'SavedClips/a.mp4', snap3),
       );

@@ -117,6 +117,12 @@ export class ClipRegistryManager {
     );
   }
 
+  // Selects next clip for transfer based on 4-tier priority:
+  // Tier 1: Metadata artifacts from SavedClips and SentryClips (event.json, event.mp4, thumb.png)
+  // Tier 2: SavedClips content files (non-metadata)
+  // Tier 3: SentryClips content files (non-metadata)
+  // Tier 4: All other clips (RecentClips, etc.)
+  // Within each tier: sorted oldest-first by firstSeenSnapshotCreatedAt, then firstSeenAt, then updatedAt, then relPath
   nextClipForTransfer(): ClipRegistryEntry | undefined {
     const candidates = Array.from(this.entriesByKey.values())
       .filter((entry) => entry.status === 'pending' || entry.status === 'failed');
@@ -125,22 +131,31 @@ export class ClipRegistryManager {
       return undefined;
     }
 
-    const hasPendingSavedMetadataArtifacts = candidates.some((entry) =>
-      this.isSavedMetadataArtifact(entry.relPath),
+    const hasPendingMetadataArtifacts = candidates.some((entry) =>
+      this.isMetadataArtifact(entry.relPath),
     );
-    const hasPendingSavedClips = candidates.some((entry) => this.isSavedClip(entry.relPath));
+
+    const hasPendingNonMetadataSavedClips = candidates.some(
+      (entry) => this.isSavedClip(entry.relPath) && !this.isMetadataArtifact(entry.relPath),
+    );
+
+    const hasPendingNonMetadataSentryClips = candidates.some(
+      (entry) => this.isSentryClip(entry.relPath) && !this.isMetadataArtifact(entry.relPath),
+    );
 
     const sorted = candidates
       .sort((left, right) => {
         const leftPriority = this.transferCategoryPriority(
           left.relPath,
-          hasPendingSavedMetadataArtifacts,
-          hasPendingSavedClips,
+          hasPendingMetadataArtifacts,
+          hasPendingNonMetadataSavedClips,
+          hasPendingNonMetadataSentryClips,
         );
         const rightPriority = this.transferCategoryPriority(
           right.relPath,
-          hasPendingSavedMetadataArtifacts,
-          hasPendingSavedClips,
+          hasPendingMetadataArtifacts,
+          hasPendingNonMetadataSavedClips,
+          hasPendingNonMetadataSentryClips,
         );
 
         if (leftPriority !== rightPriority) {
@@ -398,21 +413,32 @@ export class ClipRegistryManager {
 
   private transferCategoryPriority(
     relPath: string,
-    hasPendingSavedMetadataArtifacts: boolean,
-    hasPendingSavedClips: boolean,
+    hasPendingMetadataArtifacts: boolean,
+    hasPendingNonMetadataSavedClips: boolean,
+    hasPendingNonMetadataSentryClips: boolean,
   ): number {
-    if (hasPendingSavedMetadataArtifacts) {
-      return this.isSavedMetadataArtifact(relPath) ? 0 : 3;
+    // Tier 1: Metadata artifacts (both SavedClips and SentryClips) are highest priority
+    if (hasPendingMetadataArtifacts) {
+      return this.isMetadataArtifact(relPath) ? 0 : 3;
     }
 
-    if (hasPendingSavedClips) {
-      return this.isSavedClip(relPath) ? 0 : 3;
+    // Tier 2: SavedClips content (non-metadata) comes next
+    if (hasPendingNonMetadataSavedClips) {
+      if (this.isSavedClip(relPath) && !this.isMetadataArtifact(relPath)) {
+        return 0;
+      }
+      return 3;
     }
 
-    if (this.isSentryClip(relPath)) {
-      return 0;
+    // Tier 3: SentryClips content (non-metadata) comes after SavedClips
+    if (hasPendingNonMetadataSentryClips) {
+      if (this.isSentryClip(relPath) && !this.isMetadataArtifact(relPath)) {
+        return 0;
+      }
+      return 1;
     }
 
+    // Tier 4: Everything else
     return 1;
   }
 
@@ -424,16 +450,14 @@ export class ClipRegistryManager {
     return relPath.startsWith('SentryClips/');
   }
 
-  private isSavedMetadataArtifact(relPath: string): boolean {
-    if (!this.isSavedClip(relPath)) {
+  private isMetadataArtifact(relPath: string): boolean {
+    const isSavedOrSentry = relPath.startsWith('SavedClips/') || relPath.startsWith('SentryClips/');
+    if (!isSavedOrSentry) {
       return false;
     }
 
     const fileName = relPath.split('/').at(-1)?.toLowerCase() ?? '';
-    if (fileName === 'event.json' || fileName === 'event.mp4' || fileName === 'thumb.png') {
-      return true;
-    }
-    return false;
+    return fileName === 'event.json' || fileName === 'event.mp4' || fileName === 'thumb.png';
   }
 
   private unresolvedCountForFirstSeenSnapshot(snapshotId: string): number {
