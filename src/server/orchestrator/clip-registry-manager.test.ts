@@ -150,6 +150,47 @@ describe('ClipRegistryManager', () => {
     expect(pendingAfterTransfer.totalFiles).toBe(2);
   });
 
+  it('prioritizes SavedClips, then SentryClips, then remaining clips (oldest to newest)', async () => {
+    const manager = new ClipRegistryManager();
+    const snap1 = snapshot('snap-1', 100, async () => undefined);
+    const snap2 = snapshot('snap-2', 200, async () => undefined);
+    const snap3 = snapshot('snap-3', 300, async () => undefined);
+
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-3/mnt/TeslaCam', 'RecentClips/r-new.mp4', snap3),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-2/mnt/TeslaCam', 'SentryClips/s-old.mp4', snap2),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-1/mnt/TeslaCam', 'SavedClips/a-old.mp4', snap1),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-2/mnt/TeslaCam', 'SavedClips/b-newer.mp4', snap2),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-3/mnt/TeslaCam', 'SentryClips/t-newer.mp4', snap3),
+    );
+
+    const order: string[] = [];
+    while (true) {
+      const next = manager.nextClipForTransfer();
+      if (!next) {
+        break;
+      }
+      order.push(next.relPath);
+      await manager.markTransferred(next.key);
+    }
+
+    expect(order).toEqual([
+      'SavedClips/a-old.mp4',
+      'SavedClips/b-newer.mp4',
+      'SentryClips/s-old.mp4',
+      'SentryClips/t-newer.mp4',
+      'RecentClips/r-new.mp4',
+    ]);
+  });
+
     it('identifies pruneable snapshots with redundant files', async () => {
       const manager = new ClipRegistryManager();
       const snap1 = snapshot('snap-1', 100, async () => undefined);

@@ -121,8 +121,18 @@ export class ClipRegistryManager {
     const candidates = Array.from(this.entriesByKey.values())
       .filter((entry) => entry.status === 'pending' || entry.status === 'failed')
       .sort((left, right) => {
+        const leftPriority = this.transferCategoryPriority(left.relPath);
+        const rightPriority = this.transferCategoryPriority(right.relPath);
+
+        if (leftPriority !== rightPriority) {
+          return leftPriority - rightPriority;
+        }
+
         if (left.firstSeenSnapshotCreatedAt !== right.firstSeenSnapshotCreatedAt) {
           return left.firstSeenSnapshotCreatedAt - right.firstSeenSnapshotCreatedAt;
+        }
+        if (left.firstSeenAt !== right.firstSeenAt) {
+          return left.firstSeenAt - right.firstSeenAt;
         }
         if (left.updatedAt !== right.updatedAt) {
           return left.updatedAt - right.updatedAt;
@@ -365,6 +375,16 @@ export class ClipRegistryManager {
       snapshot,
       releasing: false,
     });
+  }
+
+  private transferCategoryPriority(relPath: string): number {
+    if (relPath.startsWith('SavedClips/')) {
+      return 0;
+    }
+    if (relPath.startsWith('SentryClips/')) {
+      return 1;
+    }
+    return 2;
   }
 
   private unresolvedCountForFirstSeenSnapshot(snapshotId: string): number {
