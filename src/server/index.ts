@@ -18,6 +18,10 @@ async function main(): Promise<void> {
     snapshotManager,
     defaultGateway: config.systemStatusDefaultGateway,
     pingPacketSize: config.systemStatusPingPacketSize,
+    partitionMountPoints: config.systemStatusPartitions
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0),
   });
 
   const webServer = new WebServerIntegration(eventBus, statusManager, snapshotManager, config);

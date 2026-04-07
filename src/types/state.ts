@@ -95,6 +95,14 @@ export const NetworkHealthSampleSchema = z.object({
 
 export type NetworkHealthSample = z.infer<typeof NetworkHealthSampleSchema>;
 
+export const PartitionUsageSchema = z.object({
+  mountPath: z.string(),
+  totalSpace: z.number(),
+  freeSpace: z.number(),
+});
+
+export type PartitionUsage = z.infer<typeof PartitionUsageSchema>;
+
 /**
  * System health status
  */
@@ -104,6 +112,7 @@ export const SystemStatusSchema = z.object({
   drivesActive: z.boolean(), // USB gadget mounted
   totalSpace: z.number(), // bytes
   freeSpace: z.number(), // bytes
+  partitions: z.array(PartitionUsageSchema).default([]),
   numSnapshots: z.number(),
   snapshotOldest: z.number().optional(), // Unix timestamp
   snapshotNewest: z.number().optional(), // Unix timestamp

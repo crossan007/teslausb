@@ -65,6 +65,7 @@ export const ENV_TO_CONFIG_KEY: Record<string, string> = {
   WEB_STATIC_PATH: 'webStaticPath',
   SYSTEM_STATUS_DEFAULT_GATEWAY: 'systemStatusDefaultGateway',
   SYSTEM_STATUS_PING_PACKET_SIZE: 'systemStatusPingPacketSize',
+  SYSTEM_STATUS_PARTITIONS: 'systemStatusPartitions',
   UPGRADE_PACKAGES: 'upgradePackages',
   INCREASE_ROOT_SIZE: 'increaseRootSize',
 };

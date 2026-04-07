@@ -88,6 +88,7 @@ export const ConfigSchema = z.object({
   webStaticPath: z.string().default('/root/teslausb-node/html'),
   systemStatusDefaultGateway: z.string().default('192.168.1.1'),
   systemStatusPingPacketSize: z.number().default(1024),
+  systemStatusPartitions: z.string().default('/,/boot/firmware,/mutable,/backingfiles'),
 
   // Maintenance
   upgradePackages: z.boolean().default(false),

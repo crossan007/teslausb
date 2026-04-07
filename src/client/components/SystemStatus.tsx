@@ -39,7 +39,9 @@ export default function SystemStatusComponent({ wsMessage, wsConnected }: Props)
 
   const totalGB = (data.totalSpace / (1024 ** 3)).toFixed(1);
   const freeGB = (data.freeSpace / (1024 ** 3)).toFixed(1);
-  const usedPercent = ((1 - data.freeSpace / data.totalSpace) * 100).toFixed(1);
+  const usedPercent = data.totalSpace > 0
+    ? ((1 - data.freeSpace / data.totalSpace) * 100).toFixed(1)
+    : '0.0';
 
   return (
     <div className="panel system-status">
@@ -63,9 +65,25 @@ export default function SystemStatusComponent({ wsMessage, wsConnected }: Props)
         <div className="status-item">
           <label>Disk Usage</label>
           <value>{usedPercent}%</value>
-          <small>
-            {freeGB}GB free / {totalGB}GB total
-          </small>
+          {(data.partitions ?? []).length > 0
+            ? data.partitions.map((partition) => {
+              const partitionTotalGB = (partition.totalSpace / (1024 ** 3)).toFixed(1);
+              const partitionFreeGB = (partition.freeSpace / (1024 ** 3)).toFixed(1);
+              const partitionUsedPercent = partition.totalSpace > 0
+                ? ((1 - partition.freeSpace / partition.totalSpace) * 100).toFixed(1)
+                : '0.0';
+
+              return (
+                <small key={partition.mountPath}>
+                  {partition.mountPath}: {partitionFreeGB}GB free / {partitionTotalGB}GB total ({partitionUsedPercent}% used)
+                </small>
+              );
+            })
+            : (
+              <small>
+                {freeGB}GB free / {totalGB}GB total
+              </small>
+            )}
         </div>
 
         <div className="status-item">
