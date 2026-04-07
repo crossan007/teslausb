@@ -119,10 +119,29 @@ export class ClipRegistryManager {
 
   nextClipForTransfer(): ClipRegistryEntry | undefined {
     const candidates = Array.from(this.entriesByKey.values())
-      .filter((entry) => entry.status === 'pending' || entry.status === 'failed')
+      .filter((entry) => entry.status === 'pending' || entry.status === 'failed');
+
+    if (candidates.length === 0) {
+      return undefined;
+    }
+
+    const hasPendingSavedMetadataArtifacts = candidates.some((entry) =>
+      this.isSavedMetadataArtifact(entry.relPath),
+    );
+    const hasPendingSavedClips = candidates.some((entry) => this.isSavedClip(entry.relPath));
+
+    const sorted = candidates
       .sort((left, right) => {
-        const leftPriority = this.transferCategoryPriority(left.relPath);
-        const rightPriority = this.transferCategoryPriority(right.relPath);
+        const leftPriority = this.transferCategoryPriority(
+          left.relPath,
+          hasPendingSavedMetadataArtifacts,
+          hasPendingSavedClips,
+        );
+        const rightPriority = this.transferCategoryPriority(
+          right.relPath,
+          hasPendingSavedMetadataArtifacts,
+          hasPendingSavedClips,
+        );
 
         if (leftPriority !== rightPriority) {
           return leftPriority - rightPriority;
@@ -140,7 +159,7 @@ export class ClipRegistryManager {
         return left.relPath.localeCompare(right.relPath);
       });
 
-    return candidates[0] ? { ...candidates[0] } : undefined;
+    return sorted[0] ? { ...sorted[0] } : undefined;
   }
 
   markTransferring(key: string): void {
@@ -377,14 +396,44 @@ export class ClipRegistryManager {
     });
   }
 
-  private transferCategoryPriority(relPath: string): number {
-    if (relPath.startsWith('SavedClips/')) {
+  private transferCategoryPriority(
+    relPath: string,
+    hasPendingSavedMetadataArtifacts: boolean,
+    hasPendingSavedClips: boolean,
+  ): number {
+    if (hasPendingSavedMetadataArtifacts) {
+      return this.isSavedMetadataArtifact(relPath) ? 0 : 3;
+    }
+
+    if (hasPendingSavedClips) {
+      return this.isSavedClip(relPath) ? 0 : 3;
+    }
+
+    if (this.isSentryClip(relPath)) {
       return 0;
     }
-    if (relPath.startsWith('SentryClips/')) {
-      return 1;
+
+    return 1;
+  }
+
+  private isSavedClip(relPath: string): boolean {
+    return relPath.startsWith('SavedClips/');
+  }
+
+  private isSentryClip(relPath: string): boolean {
+    return relPath.startsWith('SentryClips/');
+  }
+
+  private isSavedMetadataArtifact(relPath: string): boolean {
+    if (!this.isSavedClip(relPath)) {
+      return false;
     }
-    return 2;
+
+    const fileName = relPath.split('/').at(-1)?.toLowerCase() ?? '';
+    if (fileName === 'event.json' || fileName === 'event.mp4' || fileName === 'thumb.png') {
+      return true;
+    }
+    return false;
   }
 
   private unresolvedCountForFirstSeenSnapshot(snapshotId: string): number {

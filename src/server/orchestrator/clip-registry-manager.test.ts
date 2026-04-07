@@ -191,6 +191,55 @@ describe('ClipRegistryManager', () => {
     ]);
   });
 
+  it('transfers saved metadata artifacts for all events before saved videos, then sentry/recent', async () => {
+    const manager = new ClipRegistryManager();
+    const snap1 = snapshot('snap-1', 100, async () => undefined);
+    const snap2 = snapshot('snap-2', 200, async () => undefined);
+    const snap3 = snapshot('snap-3', 300, async () => undefined);
+
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-1/mnt/TeslaCam', 'SavedClips/evt-a/front.mp4', snap1),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-1/mnt/TeslaCam', 'SavedClips/evt-a/event.json', snap1),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-2/mnt/TeslaCam', 'SavedClips/evt-b/event.mp4', snap2),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-2/mnt/TeslaCam', 'SavedClips/evt-b/rear.mp4', snap2),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-3/mnt/TeslaCam', 'SavedClips/evt-c/thumb.png', snap3),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-3/mnt/TeslaCam', 'SentryClips/evt-z/front.mp4', snap3),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-3/mnt/TeslaCam', 'RecentClips/latest.mp4', snap3),
+    );
+
+    const order: string[] = [];
+    while (true) {
+      const next = manager.nextClipForTransfer();
+      if (!next) {
+        break;
+      }
+      order.push(next.relPath);
+      await manager.markTransferred(next.key);
+    }
+
+    expect(order).toEqual([
+      'SavedClips/evt-a/event.json',
+      'SavedClips/evt-b/event.mp4',
+      'SavedClips/evt-c/thumb.png',
+      'SavedClips/evt-a/front.mp4',
+      'SavedClips/evt-b/rear.mp4',
+      'SentryClips/evt-z/front.mp4',
+      'RecentClips/latest.mp4',
+    ]);
+  });
+
     it('identifies pruneable snapshots with redundant files', async () => {
       const manager = new ClipRegistryManager();
       const snap1 = snapshot('snap-1', 100, async () => undefined);
