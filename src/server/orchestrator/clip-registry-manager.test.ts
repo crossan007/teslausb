@@ -281,6 +281,33 @@ describe('ClipRegistryManager', () => {
     ]);
   });
 
+  it('accepts missing source loss by transitioning missing queued clips to transferred', async () => {
+    const manager = new ClipRegistryManager();
+    const snap = snapshot('snap-1', 100, async () => undefined);
+
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-1/mnt/TeslaCam', 'RecentClips/missing.mp4', snap),
+    );
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-1/mnt/TeslaCam', 'RecentClips/existing.mp4', snap),
+    );
+
+    const validation = await manager.validatePendingClipSources(
+      async (entry) => entry.relPath === 'RecentClips/existing.mp4',
+      { onMissing: 'transferred' },
+    );
+
+    expect(validation.checked).toBe(2);
+    expect(validation.missing).toBe(1);
+    expect(validation.eligibleKeys.size).toBe(1);
+
+    const queue = manager.snapshotTransferQueue();
+    expect(queue.files.map((file) => file.relPath)).toEqual(['RecentClips/existing.mp4']);
+
+    const next = manager.nextClipForTransfer();
+    expect(next?.relPath).toBe('RecentClips/existing.mp4');
+  });
+
   it('identifies pruneable snapshots with redundant files', async () => {
     const manager = new ClipRegistryManager();
     const snap1 = snapshot('snap-1', 100, async () => undefined);

@@ -1,5 +1,5 @@
 import { stat } from 'fs/promises';
-import { Subject, Subscription, exhaustMap, timer } from 'rxjs';
+import { Subject, Subscription, debounceTime, exhaustMap, timer } from 'rxjs';
 import { logger } from '../../core/logger';
 import { ArchiveEventBusLike } from '../events';
 
@@ -7,6 +7,7 @@ export interface BackingImageChangeDetectorOptions {
   imagePath: string;
   eventBus: ArchiveEventBusLike;
   pollIntervalMs?: number;
+  emitDebounceMs?: number;
   emitInitialEvent?: boolean;
   statProvider?: (path: string) => Promise<{ size: number; mtimeMs: number }>;
 }
@@ -15,18 +16,27 @@ export class BackingImageChangeDetector {
   private readonly imagePath: string;
   private readonly eventBus: ArchiveEventBusLike;
   private readonly pollIntervalMs: number;
+  private readonly emitDebounceMs: number;
   private readonly emitInitialEvent: boolean;
   private readonly statProvider: (path: string) => Promise<{ size: number; mtimeMs: number }>;
   private running = false;
   private pollSubscription: Subscription | null = null;
   private readonly manualPoll$ = new Subject<void>();
   private manualPollSubscription: Subscription | null = null;
+  private readonly detectedChange$ = new Subject<{
+    occurredAtMs: number;
+    imagePath: string;
+    imageSize: number;
+    imageMtimeMs: number;
+  }>();
+  private detectedChangeSubscription: Subscription | null = null;
   private lastFingerprint = '';
 
   constructor(options: BackingImageChangeDetectorOptions) {
     this.imagePath = options.imagePath;
     this.eventBus = options.eventBus;
     this.pollIntervalMs = (options.pollIntervalMs ?? 100);
+    this.emitDebounceMs = Math.max(0, options.emitDebounceMs ?? 500);
     this.emitInitialEvent = options.emitInitialEvent ?? true;
     this.statProvider = options.statProvider ?? (async (path) => stat(path));
   }
@@ -37,6 +47,16 @@ export class BackingImageChangeDetector {
     }
 
     this.running = true;
+    this.detectedChangeSubscription = this.detectedChange$
+      .pipe(
+        debounceTime(this.emitDebounceMs),
+        exhaustMap(async (event) => this.eventBus.publish({
+          type: 'backing-image-changed',
+          ...event,
+        })),
+      )
+      .subscribe();
+
     this.pollSubscription = timer(0, this.pollIntervalMs)
       .pipe(exhaustMap(async () => this.pollNow()))
       .subscribe();
@@ -52,6 +72,8 @@ export class BackingImageChangeDetector {
     this.pollSubscription = null;
     this.manualPollSubscription?.unsubscribe();
     this.manualPollSubscription = null;
+    this.detectedChangeSubscription?.unsubscribe();
+    this.detectedChangeSubscription = null;
   }
 
   async pollNow(scheduleWhenRunning = false): Promise<void> {
@@ -71,8 +93,7 @@ export class BackingImageChangeDetector {
       this.lastFingerprint = fingerprint;
 
       if (shouldEmit) {
-        await this.eventBus.publish({
-          type: 'backing-image-changed',
+        this.detectedChange$.next({
           occurredAtMs: Date.now(),
           imagePath: this.imagePath,
           imageSize: current.size,

@@ -183,6 +183,7 @@ export class ClipRegistryManager {
     options: {
       concurrency?: number;
       logSampleSize?: number;
+      onMissing?: 'failed' | 'transferred';
     } = {},
   ): Promise<{ eligibleKeys: Set<string>; checked: number; missing: number }> {
     const candidates = Array.from(this.entriesByKey.values())
@@ -200,6 +201,8 @@ export class ClipRegistryManager {
     const eligibleKeys = new Set<string>();
     const missingEntries: ClipRegistryEntry[] = [];
     const transitionedToFailed = new Set<string>();
+    const transitionedToTransferred = new Set<string>();
+    const onMissing = options.onMissing ?? 'failed';
     const concurrency = Math.max(1, options.concurrency ?? 16);
     const logSampleSize = Math.max(1, options.logSampleSize ?? 5);
 
@@ -230,9 +233,15 @@ export class ClipRegistryManager {
         if (!mutable || mutable.status === 'transferred') {
           continue;
         }
-        if (mutable.status !== 'failed') {
+        const now = Date.now();
+        if (onMissing === 'transferred') {
+          mutable.status = 'transferred';
+          mutable.transferredAt = now;
+          mutable.updatedAt = now;
+          transitionedToTransferred.add(mutable.key);
+        } else if (mutable.status !== 'failed') {
           mutable.status = 'failed';
-          mutable.updatedAt = Date.now();
+          mutable.updatedAt = now;
           transitionedToFailed.add(mutable.key);
         }
       }
@@ -241,7 +250,11 @@ export class ClipRegistryManager {
     const workers = Array.from({ length: Math.min(concurrency, candidates.length) }, () => worker());
     await Promise.all(workers);
 
-    if (transitionedToFailed.size > 0) {
+    if (transitionedToTransferred.size > 0) {
+      await this.releaseSnapshotsIfEligible();
+    }
+
+    if (transitionedToFailed.size > 0 || transitionedToTransferred.size > 0) {
       this.persist();
     }
 
@@ -251,6 +264,8 @@ export class ClipRegistryManager {
           checked,
           missing: missingEntries.length,
           transitionedToFailed: transitionedToFailed.size,
+          transitionedToTransferred: transitionedToTransferred.size,
+          onMissing,
           sampleRelPaths: missingEntries.slice(0, logSampleSize).map((entry) => entry.relPath),
         },
         'Batch source validation found queued clips with missing preferred source files',
@@ -281,6 +296,21 @@ export class ClipRegistryManager {
     if (!entry) {
       return;
     }
+    const now = Date.now();
+    entry.status = 'transferred';
+    entry.transferredAt = now;
+    entry.updatedAt = now;
+
+    await this.releaseSnapshotsIfEligible();
+    this.persist();
+  }
+
+  async markSourceLost(key: string): Promise<void> {
+    const entry = this.entriesByKey.get(key);
+    if (!entry || entry.status === 'transferred') {
+      return;
+    }
+
     const now = Date.now();
     entry.status = 'transferred';
     entry.transferredAt = now;

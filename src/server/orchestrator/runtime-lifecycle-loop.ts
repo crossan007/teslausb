@@ -298,6 +298,9 @@ export class RuntimeLifecycleLoop {
       if (Date.now() - lastFullSourceValidationAt >= sourceValidationIntervalMs) {
         await this.clipRegistryManager.validatePendingClipSources(
           this.isTransferSourceAvailable,
+          {
+            onMissing: 'transferred',
+          },
         );
         lastFullSourceValidationAt = Date.now();
       }
@@ -311,7 +314,7 @@ export class RuntimeLifecycleLoop {
 
       const sourceAvailable = await this.isTransferSourceAvailable(nextClip);
       if (!sourceAvailable) {
-        this.clipRegistryManager.markTransferFailed(nextClip.key);
+        await this.clipRegistryManager.markSourceLost(nextClip.key);
         this.persistPendingFromRegistry();
         missingKeysThisDrain.add(nextClip.key);
         continue;
