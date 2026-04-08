@@ -67,6 +67,9 @@ export class RuntimeLifecycleLoop {
   private unsubscribeSnapshotEvents: (() => void) | null = null;
   private readonly pendingSnapshotEvents: SnapshotReadyEvent[] = [];
   private processingSnapshotEvents = false;
+  private transferWorkerActive = false;
+  private transferWorkerWakeResolver: (() => void) | null = null;
+  private transferWorkerGeneration = 0;
   /** State writer used while waiting for backend reachability. */
   private readonly syncStatusWriter: SyncStatusWriter;
   /** Logger used for runtime lifecycle events. */
@@ -114,18 +117,27 @@ export class RuntimeLifecycleLoop {
       return;
     }
 
+    this.transferWorkerActive = true;
+    this.transferWorkerGeneration += 1;
+    const generation = this.transferWorkerGeneration;
+
     this.unsubscribeSnapshotEvents = this.eventBus.subscribe(async (event) => {
       if (event.type !== 'snapshot-ready') {
         return;
       }
       await this.consumeSnapshotEvent(event);
     });
+
+    void this.runTransferWorker(generation);
   }
 
   /**
    * Stops discovery and unsubscribes lifecycle processing.
    */
   stop(): void {
+    this.transferWorkerActive = false;
+    this.transferWorkerGeneration += 1;
+    this.wakeTransferWorker();
     this.unsubscribeSnapshotEvents?.();
     this.unsubscribeSnapshotEvents = null;
     this.pendingSnapshotEvents.length = 0;
@@ -186,7 +198,44 @@ export class RuntimeLifecycleLoop {
     await this.clipRegistryManager.ingestDiscovery(discoveryResult);
     this.persistPendingFromRegistry();
     await this.pruneObsoleteSnapshots();
-    await this.drainTransferQueue();
+    this.wakeTransferWorker();
+  }
+
+  private async runTransferWorker(generation: number): Promise<void> {
+    while (this.transferWorkerActive && generation === this.transferWorkerGeneration) {
+      try {
+        await this.drainTransferQueue();
+      } catch (error) {
+        this.runtimeLogger.error({ err: error }, 'Transfer worker iteration failed');
+      }
+
+      if (!this.transferWorkerActive || generation !== this.transferWorkerGeneration) {
+        return;
+      }
+
+      await this.waitForTransferWorkerWakeOrTimeout(Math.max(100, this.options.reachabilityPollMs ?? 1000));
+    }
+  }
+
+  private wakeTransferWorker(): void {
+    const resolver = this.transferWorkerWakeResolver;
+    this.transferWorkerWakeResolver = null;
+    resolver?.();
+  }
+
+  private async waitForTransferWorkerWakeOrTimeout(timeoutMs: number): Promise<void> {
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        this.transferWorkerWakeResolver = null;
+        resolve();
+      }, timeoutMs);
+
+      this.transferWorkerWakeResolver = () => {
+        clearTimeout(timer);
+        this.transferWorkerWakeResolver = null;
+        resolve();
+      };
+    });
   }
 
   /**
@@ -233,7 +282,7 @@ export class RuntimeLifecycleLoop {
     const maxConsecutiveFailures = Math.max(1, this.options.maxConsecutiveTransferFailures ?? 3);
     let consecutiveFailures = 0;
 
-    while (true) {
+    while (this.transferWorkerActive) {
       const nextClip = this.clipRegistryManager.nextClipForTransfer();
       if (!nextClip) {
         return;
@@ -345,7 +394,7 @@ export class RuntimeLifecycleLoop {
     const maxChecks = this.options.maxReachabilityChecks;
     let checks = 0;
 
-    while (true) {
+    while (this.transferWorkerActive) {
       const reachable = await this.backend.isReachable();
       if (reachable) {
         return true;
@@ -367,6 +416,8 @@ export class RuntimeLifecycleLoop {
 
       await this.sleepMs(reachabilityPollMs);
     }
+
+    return false;
   }
 
   /**

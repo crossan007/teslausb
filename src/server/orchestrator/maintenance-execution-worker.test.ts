@@ -4,7 +4,7 @@ import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 import { FreeSpaceManager } from './free-space-manager';
 import { MaintenanceExecutionWorker } from './maintenance-execution-worker';
-import { SnapshotManager } from './snapshot-manager';
+import { SnapshotManager } from './snapshot/snapshot-manager';
 
 async function createTempWorkspace(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'teslausb-maintenance-test-'));
