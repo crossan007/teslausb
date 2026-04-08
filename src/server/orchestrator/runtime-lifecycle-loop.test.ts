@@ -213,6 +213,7 @@ describe('RuntimeLifecycleLoop', () => {
         },
         eventBus,
         persistPendingClips: () => undefined,
+        isTransferSourceAvailable: async () => true,
       },
     );
 
@@ -275,6 +276,7 @@ describe('RuntimeLifecycleLoop', () => {
         },
         eventBus,
         persistPendingClips: () => undefined,
+        isTransferSourceAvailable: async () => true,
       },
     );
 
@@ -328,6 +330,7 @@ describe('RuntimeLifecycleLoop', () => {
         },
         eventBus,
         persistPendingClips: () => undefined,
+        isTransferSourceAvailable: async () => true,
       },
     );
 
@@ -380,6 +383,7 @@ describe('RuntimeLifecycleLoop', () => {
         },
         eventBus,
         persistPendingClips: () => undefined,
+        isTransferSourceAvailable: async () => true,
       },
     );
 
@@ -433,6 +437,7 @@ describe('RuntimeLifecycleLoop', () => {
         },
         eventBus,
         persistPendingClips: () => undefined,
+        isTransferSourceAvailable: async () => true,
       },
     );
 
@@ -451,6 +456,56 @@ describe('RuntimeLifecycleLoop', () => {
     expect(orchestrator.calls).toBe(1);
     expect(manager.marked).toEqual([]);
     expect(warned).toContain('Queued clip transfer did not complete');
+
+    loop.stop();
+  });
+
+  it('skips missing source clips before queue consumption and transfers next eligible clip', async () => {
+    const eventBus = new FakeEventBus();
+    const manager = new FakeDiscoveryManager();
+    const orchestrator = new FakeOrchestratorSequence(['success']);
+    const backend = new FakeBackend(1);
+
+    const loop = new RuntimeLifecycleLoop(
+      manager as unknown as ClipDiscoveryManager,
+      orchestrator as unknown as ClipArchiveCoordinator,
+      backend,
+      {
+        archivedListPath: '/mutable/sentry_files_archived',
+        archiveDelaySec: 0,
+        reachabilityPollMs: 1,
+      },
+      new FakeCommandRunner(),
+      {
+        syncStatusWriter: {
+          writeSyncStatus: () => undefined,
+        },
+        runtimeLogger: {
+          info: () => undefined,
+          warn: () => undefined,
+          error: () => undefined,
+        },
+        eventBus,
+        persistPendingClips: () => undefined,
+        isTransferSourceAvailable: async (entry) => entry.relPath !== 'RecentClips/missing.mp4',
+      },
+    );
+
+    loop.start();
+    const rootPath = '/backingfiles/snapshots/snap-000001/mnt/TeslaCam';
+    manager.queueDiscovery(['RecentClips/missing.mp4', 'RecentClips/existing.mp4']);
+    await eventBus.publish({
+      type: 'snapshot-ready',
+      occurredAtMs: Date.now(),
+      snapshot: snapshotWithRelease('snap-000001', async () => undefined),
+      scanRootPath: rootPath,
+    });
+
+    await waitForCondition(() => manager.marked.includes('RecentClips/existing.mp4'), 1000);
+
+    expect(orchestrator.calls).toBe(1);
+    expect(manager.marked).toContain('RecentClips/existing.mp4');
+    expect(manager.marked).not.toContain('RecentClips/missing.mp4');
 
     loop.stop();
   });

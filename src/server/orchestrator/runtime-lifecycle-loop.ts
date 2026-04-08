@@ -2,9 +2,11 @@
  * Legacy lineage:
  * - run/archiveloop (main wait/reachability/archive lifecycle loop)
  */
+import { lstat } from 'fs/promises';
+import { posix as posixPath } from 'path';
 import { logger, stateManager } from '../core';
 import { CommandRunner, defaultCommandRunner } from '../shared/command-runner';
-import { DefaultSyncStatus, PendingClips, SyncStatus } from '../../types';
+import { ClipRegistryEntry, DefaultSyncStatus, PendingClips, SyncStatus } from '../../types';
 import { ClipDiscoveryManager, ClipDiscoveryOptions, ClipDiscoveryResult } from './clip-discovery/clip-discovery-manager';
 import { ClipArchiveCoordinator } from './clip-archive-coordinator';
 import { ArchiveBackend } from '../../types/archive';
@@ -82,6 +84,8 @@ export class RuntimeLifecycleLoop {
   private readonly clipRegistryManager: ClipRegistryManager;
   /** Snapshot manager for pruning obsolete snapshots. */
   private readonly snapshotManager?: SnapshotManager;
+  /** Determines whether a clip's preferred source path currently exists. */
+  private readonly isTransferSourceAvailable: (entry: ClipRegistryEntry) => Promise<boolean>;
 
   /**
    * Builds a runtime lifecycle loop instance.
@@ -99,6 +103,7 @@ export class RuntimeLifecycleLoop {
       persistPendingClips?: (pending: PendingClips) => void;
       clipRegistryManager?: ClipRegistryManager;
       snapshotManager?: SnapshotManager;
+      isTransferSourceAvailable?: (entry: ClipRegistryEntry) => Promise<boolean>;
     },
   ) {
     this.syncStatusWriter = dependencies?.syncStatusWriter ?? stateManager;
@@ -107,6 +112,8 @@ export class RuntimeLifecycleLoop {
     this.persistPendingClips = dependencies?.persistPendingClips ?? ((pending) => stateManager.writePendingClips(pending));
     this.clipRegistryManager = dependencies?.clipRegistryManager ?? new ClipRegistryManager();
     this.snapshotManager = dependencies?.snapshotManager;
+    this.isTransferSourceAvailable = dependencies?.isTransferSourceAvailable
+      ?? this.defaultTransferSourceAvailabilityCheck.bind(this);
   }
 
   /**
@@ -283,7 +290,9 @@ export class RuntimeLifecycleLoop {
     let consecutiveFailures = 0;
 
     while (this.transferWorkerActive) {
-      const nextClip = this.clipRegistryManager.nextClipForTransfer();
+      const nextClip = await this.clipRegistryManager.nextClipForTransferIfSourceAvailable(
+        this.isTransferSourceAvailable,
+      );
       if (!nextClip) {
         return;
       }
@@ -460,5 +469,15 @@ export class RuntimeLifecycleLoop {
     await new Promise<void>((resolve) => {
       setTimeout(resolve, durationMs);
     });
+  }
+
+  private async defaultTransferSourceAvailabilityCheck(entry: ClipRegistryEntry): Promise<boolean> {
+    const absPath = posixPath.join(entry.preferredRootPath, entry.relPath);
+    try {
+      await lstat(absPath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }

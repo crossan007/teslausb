@@ -177,6 +177,40 @@ export class ClipRegistryManager {
     return sorted[0] ? { ...sorted[0] } : undefined;
   }
 
+  async nextClipForTransferIfSourceAvailable(
+    isSourceAvailable: (entry: ClipRegistryEntry) => Promise<boolean>,
+  ): Promise<ClipRegistryEntry | undefined> {
+    const attemptedKeys = new Set<string>();
+
+    while (true) {
+      const next = this.nextClipForTransfer();
+      if (!next) {
+        return undefined;
+      }
+
+      if (attemptedKeys.has(next.key)) {
+        return undefined;
+      }
+      attemptedKeys.add(next.key);
+
+      const sourceAvailable = await isSourceAvailable(next);
+      if (sourceAvailable) {
+        return next;
+      }
+
+      logger.warn(
+        {
+          key: next.key,
+          relPath: next.relPath,
+          preferredSnapshotId: next.preferredSnapshotId,
+          preferredRootPath: next.preferredRootPath,
+        },
+        'Skipping queued clip because preferred source file is missing',
+      );
+      this.markTransferFailed(next.key);
+    }
+  }
+
   markTransferring(key: string): void {
     const entry = this.entriesByKey.get(key);
     if (!entry || entry.status === 'transferred') {
