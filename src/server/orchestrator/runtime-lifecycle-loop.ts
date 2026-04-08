@@ -322,7 +322,7 @@ export class RuntimeLifecycleLoop {
           this.runtimeLogger.error({ err: error }, 'Archive cycle failed for queued clip');
         }
 
-        const archivedNowPaths = await this.discoveryManager.resolveArchivedFromSource(
+        const archivedNowPaths = await this.resolveArchivedPaths(
           nextClip.preferredRootPath,
           [nextClip.relPath],
         );
@@ -384,6 +384,22 @@ export class RuntimeLifecycleLoop {
 
   private persistPendingFromRegistry(): void {
     this.persistPendingClips(this.clipRegistryManager.snapshotPendingClips());
+  }
+
+  private async resolveArchivedPaths(rootPath: string, filePaths: string[]): Promise<string[]> {
+    if (typeof this.backend.verifyArchived === 'function') {
+      try {
+        return await this.backend.verifyArchived(filePaths);
+      } catch (error) {
+        this.runtimeLogger.warn(
+          { err: error, fileCount: filePaths.length },
+          'Backend destination verification failed; treating files as not archived',
+        );
+        return [];
+      }
+    }
+
+    return this.discoveryManager.resolveArchivedFromSource(rootPath, filePaths);
   }
 
   /**

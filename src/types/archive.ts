@@ -108,6 +108,12 @@ export interface ArchiveBackend {
   ): ArchiveTransferExecution;
 
   /**
+   * Optional backend-native destination verification.
+   * Returns the subset of file paths confirmed to exist on archive destination.
+   */
+  verifyArchived?(filePaths: string[]): Promise<string[]>;
+
+  /**
    * Copy music from source to music archive.
    * Only implemented by backends that support music sharing (cifs, nfs).
    */

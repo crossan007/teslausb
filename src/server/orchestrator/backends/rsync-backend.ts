@@ -188,6 +188,31 @@ export class RsyncBackend implements ArchiveBackend {
     };
   }
 
+  async verifyArchived(filePaths: string[]): Promise<string[]> {
+    if (filePaths.length === 0) {
+      return [];
+    }
+
+    const { rsyncServer, rsyncUser, rsyncPath } = this.requireConfig();
+    const destinationRoot = rsyncPath.replace(/\/+$/, '');
+    const archived: string[] = [];
+
+    for (const relPath of filePaths) {
+      const primaryPath = `${destinationRoot}/${relPath}`;
+      const teslaCamPrefixedPath = `${destinationRoot}/TeslaCam/${relPath}`;
+      const primaryExists = await this.remotePathExists(rsyncUser, rsyncServer, primaryPath);
+      const prefixedExists = primaryExists
+        ? false
+        : await this.remotePathExists(rsyncUser, rsyncServer, teslaCamPrefixedPath);
+
+      if (primaryExists || prefixedExists) {
+        archived.push(relPath);
+      }
+    }
+
+    return archived;
+  }
+
   async disconnect(): Promise<void> {
     return;
   }
@@ -200,6 +225,22 @@ export class RsyncBackend implements ArchiveBackend {
     }
 
     return { rsyncServer, rsyncUser, rsyncPath };
+  }
+
+  private async remotePathExists(user: string, host: string, remotePath: string): Promise<boolean> {
+    const escapedPath = this.quoteForShell(remotePath);
+    const result = await this.commandRunner.run('ssh', [
+      '-q',
+      '-o',
+      'ConnectTimeout=5',
+      `${user}@${host}`,
+      `test -e ${escapedPath}`,
+    ]);
+    return result.code === 0;
+  }
+
+  private quoteForShell(value: string): string {
+    return `'${value.replace(/'/g, `'"'"'`)}'`;
   }
 
   private buildBandwidthLimitArgs(): string[] {

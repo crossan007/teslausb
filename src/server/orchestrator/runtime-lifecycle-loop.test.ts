@@ -31,7 +31,10 @@ class FakeBackend implements ArchiveBackend {
   name = 'fake';
   private checks = 0;
 
-  constructor(private readonly reachableAfterChecks: number) {}
+  constructor(
+    private readonly reachableAfterChecks: number,
+    private readonly verifiedArchivedPaths?: string[],
+  ) {}
 
   async verify(): Promise<void> {
     return;
@@ -51,6 +54,10 @@ class FakeBackend implements ArchiveBackend {
       archived: filePaths.length,
       failed: 0,
     });
+  }
+
+  async verifyArchived(filePaths: string[]): Promise<string[]> {
+    return this.verifiedArchivedPaths ?? filePaths;
   }
 
   async disconnect(): Promise<void> {
@@ -391,6 +398,59 @@ describe('RuntimeLifecycleLoop', () => {
     expect(orchestrator.calls).toBe(5);
     expect(manager.marked.length).toBe(1);
     expect(warned).toContain('Stopping queue drain after consecutive transfer failures');
+
+    loop.stop();
+  });
+
+  it('does not mark archived when backend destination verification fails', async () => {
+    const eventBus = new FakeEventBus();
+    const manager = new FakeDiscoveryManager();
+    const orchestrator = new FakeOrchestratorSequence(['success']);
+    const backend = new FakeBackend(1, []);
+    const warned: string[] = [];
+
+    const loop = new RuntimeLifecycleLoop(
+      manager as unknown as ClipDiscoveryManager,
+      orchestrator as unknown as ClipArchiveCoordinator,
+      backend,
+      {
+        archivedListPath: '/mutable/sentry_files_archived',
+        archiveDelaySec: 0,
+        reachabilityPollMs: 1,
+        maxConsecutiveTransferFailures: 1,
+      },
+      new FakeCommandRunner(),
+      {
+        syncStatusWriter: {
+          writeSyncStatus: () => undefined,
+        },
+        runtimeLogger: {
+          info: () => undefined,
+          warn: (_payload: unknown, message?: string) => {
+            warned.push(message ?? '');
+          },
+          error: () => undefined,
+        },
+        eventBus,
+        persistPendingClips: () => undefined,
+      },
+    );
+
+    loop.start();
+    const rootPath = '/backingfiles/snapshots/snap-000001/mnt/TeslaCam';
+    manager.queueDiscovery(['SavedClips/evt1/file.mp4']);
+    await eventBus.publish({
+      type: 'snapshot-ready',
+      occurredAtMs: Date.now(),
+      snapshot: snapshotWithRelease('snap-000001', async () => undefined),
+      scanRootPath: rootPath,
+    });
+
+    await waitForCondition(() => warned.includes('Stopping queue drain after consecutive transfer failures'), 1000);
+
+    expect(orchestrator.calls).toBe(1);
+    expect(manager.marked).toEqual([]);
+    expect(warned).toContain('Queued clip transfer did not complete');
 
     loop.stop();
   });
