@@ -32,6 +32,8 @@ export interface RuntimeLifecycleLoopOptions {
   finishTriggerFilePaths?: string[];
   /** Stop queue drain after this many consecutive transfer failures. Defaults to 3. */
   maxConsecutiveTransferFailures?: number;
+  /** Interval for full pending source validation while transfer worker is active. */
+  pendingSourceValidationIntervalMs?: number;
   includeSavedclips?: boolean;
   includeSentryclips?: boolean;
   includeTrackmodeclips?: boolean;
@@ -287,14 +289,32 @@ export class RuntimeLifecycleLoop {
    */
   private async drainTransferQueue(): Promise<void> {
     const maxConsecutiveFailures = Math.max(1, this.options.maxConsecutiveTransferFailures ?? 3);
+    const sourceValidationIntervalMs = Math.max(1000, this.options.pendingSourceValidationIntervalMs ?? 30_000);
     let consecutiveFailures = 0;
+    let lastFullSourceValidationAt = 0;
+    const missingKeysThisDrain = new Set<string>();
 
     while (this.transferWorkerActive) {
-      const nextClip = await this.clipRegistryManager.nextClipForTransferIfSourceAvailable(
-        this.isTransferSourceAvailable,
+      if (Date.now() - lastFullSourceValidationAt >= sourceValidationIntervalMs) {
+        await this.clipRegistryManager.validatePendingClipSources(
+          this.isTransferSourceAvailable,
+        );
+        lastFullSourceValidationAt = Date.now();
+      }
+
+      const nextClip = this.clipRegistryManager.nextClipForTransfer(
+        (entry) => !missingKeysThisDrain.has(entry.key),
       );
       if (!nextClip) {
         return;
+      }
+
+      const sourceAvailable = await this.isTransferSourceAvailable(nextClip);
+      if (!sourceAvailable) {
+        this.clipRegistryManager.markTransferFailed(nextClip.key);
+        this.persistPendingFromRegistry();
+        missingKeysThisDrain.add(nextClip.key);
+        continue;
       }
 
       const pending = this.clipRegistryManager.snapshotPendingClips();
@@ -343,6 +363,7 @@ export class RuntimeLifecycleLoop {
           await this.clipRegistryManager.markTransferred(nextClip.key);
           this.persistPendingFromRegistry();
           consecutiveFailures = 0;
+          missingKeysThisDrain.delete(nextClip.key);
         } else {
           this.clipRegistryManager.markTransferFailed(nextClip.key);
           this.persistPendingFromRegistry();

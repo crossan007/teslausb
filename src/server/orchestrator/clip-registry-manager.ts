@@ -123,9 +123,10 @@ export class ClipRegistryManager {
   // Tier 3: SentryClips content files (non-metadata)
   // Tier 4: All other clips (RecentClips, etc.)
   // Within each tier: sorted oldest-first by firstSeenSnapshotCreatedAt, then firstSeenAt, then updatedAt, then relPath
-  nextClipForTransfer(): ClipRegistryEntry | undefined {
+  nextClipForTransfer(eligibilityPredicate?: (entry: ClipRegistryEntry) => boolean): ClipRegistryEntry | undefined {
     const candidates = Array.from(this.entriesByKey.values())
-      .filter((entry) => entry.status === 'pending' || entry.status === 'failed');
+      .filter((entry) => entry.status === 'pending' || entry.status === 'failed')
+      .filter((entry) => (eligibilityPredicate ? eligibilityPredicate(entry) : true));
 
     if (candidates.length === 0) {
       return undefined;
@@ -177,38 +178,90 @@ export class ClipRegistryManager {
     return sorted[0] ? { ...sorted[0] } : undefined;
   }
 
-  async nextClipForTransferIfSourceAvailable(
+  async validatePendingClipSources(
     isSourceAvailable: (entry: ClipRegistryEntry) => Promise<boolean>,
-  ): Promise<ClipRegistryEntry | undefined> {
-    const attemptedKeys = new Set<string>();
+    options: {
+      concurrency?: number;
+      logSampleSize?: number;
+    } = {},
+  ): Promise<{ eligibleKeys: Set<string>; checked: number; missing: number }> {
+    const candidates = Array.from(this.entriesByKey.values())
+      .filter((entry) => entry.status === 'pending' || entry.status === 'failed');
 
-    while (true) {
-      const next = this.nextClipForTransfer();
-      if (!next) {
-        return undefined;
+    const checked = candidates.length;
+    if (checked === 0) {
+      return {
+        eligibleKeys: new Set<string>(),
+        checked: 0,
+        missing: 0,
+      };
+    }
+
+    const eligibleKeys = new Set<string>();
+    const missingEntries: ClipRegistryEntry[] = [];
+    const transitionedToFailed = new Set<string>();
+    const concurrency = Math.max(1, options.concurrency ?? 16);
+    const logSampleSize = Math.max(1, options.logSampleSize ?? 5);
+
+    let nextIndex = 0;
+    const worker = async (): Promise<void> => {
+      while (true) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        if (currentIndex >= candidates.length) {
+          return;
+        }
+
+        const entry = candidates[currentIndex];
+        let sourceAvailable = false;
+        try {
+          sourceAvailable = await isSourceAvailable({ ...entry });
+        } catch {
+          sourceAvailable = false;
+        }
+
+        if (sourceAvailable) {
+          eligibleKeys.add(entry.key);
+          continue;
+        }
+
+        missingEntries.push(entry);
+        const mutable = this.entriesByKey.get(entry.key);
+        if (!mutable || mutable.status === 'transferred') {
+          continue;
+        }
+        if (mutable.status !== 'failed') {
+          mutable.status = 'failed';
+          mutable.updatedAt = Date.now();
+          transitionedToFailed.add(mutable.key);
+        }
       }
+    };
 
-      if (attemptedKeys.has(next.key)) {
-        return undefined;
-      }
-      attemptedKeys.add(next.key);
+    const workers = Array.from({ length: Math.min(concurrency, candidates.length) }, () => worker());
+    await Promise.all(workers);
 
-      const sourceAvailable = await isSourceAvailable(next);
-      if (sourceAvailable) {
-        return next;
-      }
+    if (transitionedToFailed.size > 0) {
+      this.persist();
+    }
 
+    if (missingEntries.length > 0) {
       logger.warn(
         {
-          key: next.key,
-          relPath: next.relPath,
-          preferredSnapshotId: next.preferredSnapshotId,
-          preferredRootPath: next.preferredRootPath,
+          checked,
+          missing: missingEntries.length,
+          transitionedToFailed: transitionedToFailed.size,
+          sampleRelPaths: missingEntries.slice(0, logSampleSize).map((entry) => entry.relPath),
         },
-        'Skipping queued clip because preferred source file is missing',
+        'Batch source validation found queued clips with missing preferred source files',
       );
-      this.markTransferFailed(next.key);
     }
+
+    return {
+      eligibleKeys,
+      checked,
+      missing: missingEntries.length,
+    };
   }
 
   markTransferring(key: string): void {
