@@ -48,7 +48,6 @@ class MockBackend implements ArchiveBackend {
 class InMemoryStateSink implements StateSink {
   statuses: SyncStatus[] = [];
   results: OperationResult<any>[] = [];
-  transfers = 0;
 
   writeSyncStatus(status: SyncStatus): void {
     this.statuses.push(status);
@@ -56,10 +55,6 @@ class InMemoryStateSink implements StateSink {
 
   writeOperationResult(_operation: string, result: OperationResult<any>): void {
     this.results.push(result);
-  }
-
-  writeTransferSession(): void {
-    this.transfers += 1;
   }
 }
 
@@ -80,7 +75,6 @@ describe('ClipArchiveCoordinator', () => {
     expect(backend.archiveCalls).toBe(1);
     expect(backend.disconnectCalls).toBe(1);
     expect(state.results).toHaveLength(1);
-    expect(state.transfers).toBeGreaterThan(0);
     expect(state.results[0].success).toBe(true);
   });
 

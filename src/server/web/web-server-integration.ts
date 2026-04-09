@@ -75,11 +75,6 @@ export class WebServerIntegration {
         this.transferSessionView.applyClipRegistry(clipRegistry);
         this.snapshotListView.applyClipRegistry(clipRegistry);
       }
-
-      const transferSession = stateManager.readTransferSession();
-      if (transferSession) {
-        this.transferSessionView.applyTransferSession(transferSession);
-      }
     }, 1000);
   }
 

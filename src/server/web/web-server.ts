@@ -12,6 +12,8 @@ import {
   SnapshotListViewService,
 } from '../view-services';
 
+type ClipRegistryStatusCounts = Record<'pending' | 'transferring' | 'failed' | 'transferred', number>;
+
 export interface WebServerOptions {
   port?: number;
   corsOrigins?: string | string[];
@@ -142,13 +144,13 @@ export class WebServer {
 
         const registry = stateManager.readClipRegistry();
         const pendingClips = stateManager.readPendingClips();
-        const transferSession = stateManager.readTransferSession();
         const snapshotState = stateManager.readSnapshot();
         const startupRecovery = stateManager.readStartupRecoveryStatus();
         const snapshotPruning = stateManager.readSnapshotPruningStatus();
 
         const entries = registry?.entries ?? [];
         const statusCounts = this.buildStatusCounts(entries);
+        const queueDepth = this.untransferredQueueDepth(statusCounts);
 
         const firstSeenSummary = this.groupBySnapshot(entries, 'firstSeenSnapshotId');
         const preferredSummary = this.groupBySnapshot(entries, 'preferredSnapshotId');
@@ -157,7 +159,7 @@ export class WebServer {
 
         const unresolvedByFirstSeenSnapshot = firstSeenSummary.map((row) => ({
           ...row,
-          unresolvedCount: row.statusCounts.pending + row.statusCounts.transferring + row.statusCounts.failed,
+          unresolvedCount: this.untransferredQueueDepth(row.statusCounts),
         }));
 
         const recentFirstSeen = [...entries]
@@ -170,7 +172,6 @@ export class WebServer {
           .slice(0, sampleLimit)
           .map((entry) => this.entrySample(entry));
 
-        const transferQueueSnapshot = this.transferSessionView.getTransferQueueSnapshot();
         const activeSnapshotId = snapshotState?.id;
         const activeFirstSeen = activeSnapshotId ? firstSeenBySnapshot.get(activeSnapshotId)?.totalEntries ?? 0 : 0;
         const activePreferred = activeSnapshotId ? preferredBySnapshot.get(activeSnapshotId)?.totalEntries ?? 0 : 0;
@@ -205,27 +206,20 @@ export class WebServer {
           });
         }
 
-        if (transferQueueSnapshot.length > 0 && (pendingClips?.totalFiles ?? 0) === 0) {
+        if (queueDepth > 0 && (pendingClips?.totalFiles ?? 0) === 0) {
           alerts.push({
             level: 'info',
             code: 'queue_without_pending_snapshot_count',
-            message: `Transfer queue has ${transferQueueSnapshot.length} items while pending_clips reports 0`,
+            message: `Registry queue depth is ${queueDepth} while pending_clips reports 0`,
           });
         }
 
         const startupRecoveryCount = startupRecovery?.clipRegistryRecoveredTransferring ?? 0;
-        if ((startupRecovery?.transferSessionRecovered ?? false) || startupRecoveryCount > 0) {
-          const parts: string[] = [];
-          if (startupRecovery?.transferSessionRecovered) {
-            parts.push('transfer session');
-          }
-          if (startupRecoveryCount > 0) {
-            parts.push(`${startupRecoveryCount} clip registry entries`);
-          }
+        if (startupRecoveryCount > 0) {
           alerts.push({
             level: 'info',
             code: 'startup_recovery_performed',
-            message: `Startup recovery converted stale state: ${parts.join(', ')}`,
+            message: `Startup recovery recovered ${startupRecoveryCount} clip registry entries from stale transferring state`,
           });
         }
 
@@ -244,7 +238,7 @@ export class WebServer {
             statusCounts,
             distinctFirstSeenSnapshots: firstSeenSummary.length,
             distinctPreferredSnapshots: preferredSummary.length,
-            queueDepth: transferQueueSnapshot.length,
+            queueDepth,
           },
           snapshots: {
             firstSeen: unresolvedByFirstSeenSnapshot,
@@ -266,21 +260,9 @@ export class WebServer {
                   oldestAgeSec: pendingClips.oldestAgeSec,
                 }
               : null,
-            transferSession: transferSession
-              ? {
-                  sessionId: transferSession.sessionId,
-                  phase: transferSession.phase,
-                  filesTotal: transferSession.filesTotal,
-                  filesCompleted: transferSession.filesCompleted,
-                  filesFailed: transferSession.filesFailed,
-                  currentFilePath: transferSession.currentFilePath,
-                  updatedAt: transferSession.updatedAt,
-                }
-              : null,
             startupRecovery: startupRecovery
               ? {
                   updatedAt: startupRecovery.updatedAt,
-                  transferSessionRecovered: startupRecovery.transferSessionRecovered,
                   clipRegistryRecoveredTransferring: startupRecovery.clipRegistryRecoveredTransferring,
                 }
               : null,
@@ -308,7 +290,6 @@ export class WebServer {
       try {
         stateManager.writeStartupRecoveryStatus({
           updatedAt: Date.now(),
-          transferSessionRecovered: false,
           clipRegistryRecoveredTransferring: 0,
         });
 
@@ -382,7 +363,7 @@ export class WebServer {
     }
   }
 
-  private buildStatusCounts(entries: ClipRegistryEntry[]): Record<'pending' | 'transferring' | 'failed' | 'transferred', number> {
+  private buildStatusCounts(entries: ClipRegistryEntry[]): ClipRegistryStatusCounts {
     return entries.reduce(
       (acc, entry) => {
         acc[entry.status] += 1;
@@ -397,13 +378,17 @@ export class WebServer {
     );
   }
 
+  private untransferredQueueDepth(statusCounts: ClipRegistryStatusCounts): number {
+    return statusCounts.pending + statusCounts.transferring + statusCounts.failed;
+  }
+
   private groupBySnapshot(
     entries: ClipRegistryEntry[],
     key: 'firstSeenSnapshotId' | 'preferredSnapshotId',
   ): Array<{
     snapshotId: string;
     totalEntries: number;
-    statusCounts: Record<'pending' | 'transferring' | 'failed' | 'transferred', number>;
+    statusCounts: ClipRegistryStatusCounts;
     oldestFirstSeenAt: number;
     newestUpdatedAt: number;
   }> {

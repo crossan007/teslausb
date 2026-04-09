@@ -36,7 +36,6 @@ export interface MaintenanceResult {
 export interface StateSink {
   writeSyncStatus(status: SyncStatus): void;
   writeOperationResult(operation: string, result: OperationResult<SyncCycleResult>): void;
-  writeTransferSession?(session: TransferSession): void;
 }
 
 export interface ClipArchiveCoordinatorOptions {
@@ -96,7 +95,6 @@ export class ClipArchiveCoordinator {
       const transfer = this.backend.archiveClips(input.fromPath, input.files);
       const transferLogger = this.createTransferLogger();
       const subscription = transfer.session$.subscribe((session: TransferSession) => {
-        this.stateSink?.writeTransferSession?.(session);
         transferLogger(session);
       });
 

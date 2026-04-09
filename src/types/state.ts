@@ -68,7 +68,6 @@ export type PendingClips = z.infer<typeof PendingClipsSchema>;
 
 export const StartupRecoveryStatusSchema = z.object({
   updatedAt: z.number(),
-  transferSessionRecovered: z.boolean().default(false),
   clipRegistryRecoveredTransferring: z.number().default(0),
 });
 

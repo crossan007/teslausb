@@ -15,8 +15,6 @@ import {
   SyncStatusSchema,
   SnapshotSchema,
   PendingClipsSchema,
-  TransferSession,
-  TransferSessionSchema,
   ClipRegistry,
   ClipRegistrySchema,
   StartupRecoveryStatus,
@@ -279,44 +277,6 @@ export class StateManager {
       logger.debug({ clipCount: clips.files.length }, 'Pending clips written');
     } catch (error) {
       logger.error({ error }, 'Failed to write pending clips');
-      throw error;
-    }
-  }
-
-  /**
-   * Read current transfer session progress.
-   */
-  readTransferSession(): TransferSession | null {
-    try {
-      const path = this.statePath('transfer_session');
-      if (!existsSync(path)) {
-        return null;
-      }
-      const content = readFileSync(path, 'utf-8');
-      const data = JSON.parse(content);
-      const parsed = TransferSessionSchema.safeParse(data);
-      if (!parsed.success) {
-        logger.warn({ issues: parsed.error.issues }, 'Invalid TransferSession format');
-        return null;
-      }
-      return parsed.data;
-    } catch (error) {
-      logger.warn({ error }, 'Failed to read transfer session');
-      return null;
-    }
-  }
-
-  /**
-   * Write current transfer session progress.
-   */
-  writeTransferSession(session: TransferSession): void {
-    try {
-      const path = this.statePath('transfer_session');
-      ensureDir(dirname(path));
-      writeFileSync(path, JSON.stringify(session, null, 2), 'utf-8');
-      logger.debug({ sessionId: session.sessionId, phase: session.phase }, 'Transfer session written');
-    } catch (error) {
-      logger.error({ err: error, sessionId: session.sessionId }, 'Failed to write transfer session');
       throw error;
     }
   }

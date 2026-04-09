@@ -64,7 +64,7 @@ type DebugPayload = {
     } | null;
     startupRecovery: {
       updatedAt: number;
-      transferSessionRecovered: boolean;
+
       clipRegistryRecoveredTransferring: number;
     } | null;
     snapshotPruning: {
@@ -226,10 +226,8 @@ export default function DiagnosticsComponent() {
   const preferredRows = topRows(data.snapshots.preferred);
   const recentRows = data.recentSamples.byFirstSeenAtDesc.slice(0, 8);
   const hasStartupRecoveryToClear = Boolean(
-    data.runtime.startupRecovery && (
-      data.runtime.startupRecovery.transferSessionRecovered ||
+    data.runtime.startupRecovery &&
       data.runtime.startupRecovery.clipRegistryRecoveredTransferring > 0
-    ),
   );
   const hasSnapshotPruningToClear = Boolean(
     data.runtime.snapshotPruning && data.runtime.snapshotPruning.totalPruned > 0,
@@ -312,7 +310,6 @@ export default function DiagnosticsComponent() {
         ) : (
           <div className="diag-runtime-row">
             <span>Recorded: {formatTs(data.runtime.startupRecovery.updatedAt)}</span>
-            <span>Session recovered: {data.runtime.startupRecovery.transferSessionRecovered ? 'yes' : 'no'}</span>
             <span>Registry entries recovered: {data.runtime.startupRecovery.clipRegistryRecoveredTransferring}</span>
           </div>
         )}

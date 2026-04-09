@@ -3,7 +3,7 @@ import { StateManager } from './state-manager';
 import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { ClipRegistry, SyncStatus, Snapshot, PendingClips, OperationResult, TransferSession } from '../../types';
+import { ClipRegistry, SyncStatus, Snapshot, PendingClips, OperationResult } from '../../types';
 
 describe('StateManager', () => {
   let stateManager: StateManager;
@@ -194,46 +194,6 @@ describe('StateManager', () => {
       // Verify file was created (we can't easily read it without system calls)
       // In a real test, we'd mock the filesystem
       expect(result.success).toBe(true);
-    });
-  });
-
-  describe('TransferSession', () => {
-    it('writes and reads transfer session', () => {
-      const session: TransferSession = {
-        sessionId: 'session-1',
-        backend: 'rsync',
-        phase: 'transferring',
-        filesTotal: 2,
-        filesCompleted: 1,
-        filesFailed: 0,
-        batchPercent: 50,
-        bytesTransferred: 1024,
-        currentFilePath: 'SavedClips/a.mp4',
-        startedAt: Date.now() - 1000,
-        updatedAt: Date.now(),
-        files: [
-          {
-            path: 'SavedClips/a.mp4',
-            status: 'transferring',
-            bytesTransferred: 1024,
-            percent: 50,
-            updatedAt: Date.now(),
-          },
-          {
-            path: 'SavedClips/b.mp4',
-            status: 'queued',
-            bytesTransferred: 0,
-            updatedAt: Date.now(),
-          },
-        ],
-      };
-
-      stateManager.writeTransferSession(session);
-      const read = stateManager.readTransferSession();
-
-      expect(read?.sessionId).toBe('session-1');
-      expect(read?.filesTotal).toBe(2);
-      expect(read?.files[0].status).toBe('transferring');
     });
   });
 

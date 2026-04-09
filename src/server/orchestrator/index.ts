@@ -14,7 +14,6 @@ import { BackingImageChangeDetector } from './snapshot/backing-image-change-dete
 import { SnapshotManager } from './snapshot/snapshot-manager';
 import { ArchiveEventBus, PushMessageEventHandler, TeslaApiInteropEventHandler } from './events';
 import { ClipRegistryManager } from './clip-registry-manager';
-import { TransferSession } from '../../types/transfer';
 
 export interface OrchestratorContext {
   eventBus: ArchiveEventBus;
@@ -72,43 +71,7 @@ function buildStartTriggerFilePaths(finishTriggerFilePaths: string[]): string[] 
   return finishTriggerFilePaths.map((path) => `${path}.start`);
 }
 
-function recoverStaleTransferSessionAtStartup(): boolean {
-  const session = stateManager.readTransferSession();
-  if (!session) {
-    return false;
-  }
-
-  const active =
-    session.phase === 'starting' ||
-    session.phase === 'transferring' ||
-    session.phase === 'finalizing';
-
-  if (!active) {
-    return false;
-  }
-
-  const now = Date.now();
-  const recoveredSession: TransferSession = {
-    ...session,
-    phase: 'failed',
-    updatedAt: now,
-    completedAt: session.completedAt ?? now,
-  };
-
-  stateManager.writeTransferSession(recoveredSession);
-  logger.warn(
-    {
-      previousPhase: session.phase,
-      sessionId: session.sessionId,
-    },
-    'Recovered stale active transfer session at startup',
-  );
-
-  return true;
-}
-
 export async function startOrchestrator(config: TeslaUSBConfig): Promise<OrchestratorContext> {
-  const transferSessionRecovered = recoverStaleTransferSessionAtStartup();
   await gadgetManager.enable();
   logger.info('USB gadget enabled');
   const backend = createArchiveBackend(config);
@@ -164,7 +127,6 @@ export async function startOrchestrator(config: TeslaUSBConfig): Promise<Orchest
   });
   stateManager.writeStartupRecoveryStatus({
     updatedAt: Date.now(),
-    transferSessionRecovered,
     clipRegistryRecoveredTransferring: clipRegistryManager.startupRecoveredTransferringCount(),
   });
   const lifecycleLoop = new RuntimeLifecycleLoop(
