@@ -22,6 +22,8 @@ export const ClipRegistryEntrySchema = z.object({
   status: ClipRegistryStatusSchema.default('pending'),
   isSymlink: z.boolean().default(true),
   ageSec: z.number().default(0),
+  sourceSizeBytes: z.number().optional(),
+  sourceMtimeMs: z.number().optional(),
   lastAttemptAt: z.number().optional(),
   transferredAt: z.number().optional(),
   updatedAt: z.number(),

@@ -46,6 +46,8 @@ export interface ClipMetadata {
   absPath: string;
   ageSec: number;
   isSymlink: boolean;
+  sizeBytes?: number;
+  mtimeMs?: number;
 }
 
 export function buildPendingClips(clips: ClipMetadata[]): PendingClips {
@@ -239,6 +241,8 @@ export class ClipDiscoveryManager {
         absPath,
         ageSec,
         isSymlink,
+        sizeBytes: fileStats.size,
+        mtimeMs: fileStats.mtimeMs,
       };
     };
 

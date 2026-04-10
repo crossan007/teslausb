@@ -17,7 +17,12 @@ function snapshot(id: string, createdAt: number, onRelease: () => Promise<void>)
   };
 }
 
-function discovery(rootPath: string, relPath: string, snap: Snapshot): ClipDiscoveryResult {
+function discovery(
+  rootPath: string,
+  relPath: string,
+  snap: Snapshot,
+  source?: { sizeBytes: number; mtimeMs: number },
+): ClipDiscoveryResult {
   const key = `b2s:${blake2s256(relPath)}`;
   return {
     rootPath,
@@ -29,6 +34,8 @@ function discovery(rootPath: string, relPath: string, snap: Snapshot): ClipDisco
         absPath: `${rootPath}/${relPath}`,
         ageSec: 10,
         isSymlink: true,
+        sizeBytes: source?.sizeBytes,
+        mtimeMs: source?.mtimeMs,
       },
     ],
     candidatesDiscovered: 1,
@@ -104,6 +111,45 @@ describe('ClipRegistryManager', () => {
     await manager.markTransferred(next!.key);
 
     expect(released).toContain('snap-1');
+    expect(released).toContain('snap-2');
+  });
+
+  it('re-queues clip when same relPath is reused with changed file content', async () => {
+    const released: string[] = [];
+    const manager = new ClipRegistryManager();
+    const relPath = 'RecentClips/front.mp4';
+
+    const snap1 = snapshot('snap-1', 100, async () => {
+      released.push('snap-1');
+    });
+    const snap2 = snapshot('snap-2', 200, async () => {
+      released.push('snap-2');
+    });
+
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-1/mnt/TeslaCam', relPath, snap1, {
+        sizeBytes: 120_000,
+        mtimeMs: 1_000,
+      }),
+    );
+
+    let next = manager.nextClipForTransfer();
+    expect(next?.relPath).toBe(relPath);
+    await manager.markTransferred(next!.key);
+    expect(released).toContain('snap-1');
+
+    await manager.ingestDiscovery(
+      discovery('/backingfiles/snapshots/snap-2/mnt/TeslaCam', relPath, snap2, {
+        sizeBytes: 130_000,
+        mtimeMs: 2_000,
+      }),
+    );
+
+    next = manager.nextClipForTransfer();
+    expect(next?.relPath).toBe(relPath);
+    expect(next?.firstSeenSnapshotId).toBe('snap-2');
+
+    await manager.markTransferred(next!.key);
     expect(released).toContain('snap-2');
   });
 

@@ -61,6 +61,7 @@ export class ClipRegistryManager {
     const now = Date.now();
     let inserted = 0;
     let updated = 0;
+    let requeued = 0;
     for (const clip of result.clips) {
       const existing = this.entriesByKey.get(clip.key);
 
@@ -79,15 +80,35 @@ export class ClipRegistryManager {
           status: 'pending',
           isSymlink: clip.isSymlink,
           ageSec: clip.ageSec,
+          sourceSizeBytes: clip.sizeBytes,
+          sourceMtimeMs: clip.mtimeMs,
           updatedAt: now,
         });
         continue;
       }
 
       updated += 1;
+      const sourceChanged = this.isChangedClipContent(existing, clip);
       existing.clipName = clip.fileName;
       existing.ageSec = clip.ageSec;
       existing.isSymlink = clip.isSymlink;
+      existing.sourceSizeBytes = clip.sizeBytes;
+      existing.sourceMtimeMs = clip.mtimeMs;
+
+      if (sourceChanged) {
+        existing.status = 'pending';
+        existing.transferredAt = undefined;
+        existing.lastAttemptAt = undefined;
+        existing.firstSeenSnapshotId = snapshot.id;
+        existing.firstSeenSnapshotCreatedAt = snapshot.createdAt ?? 0;
+        existing.firstSeenAt = now;
+        existing.preferredSnapshotId = snapshot.id;
+        existing.preferredRootPath = result.rootPath;
+        existing.preferredSnapshotCreatedAt = snapshot.createdAt ?? 0;
+        existing.updatedAt = now;
+        requeued += 1;
+        continue;
+      }
 
       if (
         existing.status !== 'transferred' &&
@@ -109,6 +130,7 @@ export class ClipRegistryManager {
         discovered: result.clips.length,
         inserted,
         updated,
+        requeued,
         unresolvedFirstSeenForSnapshot: this.unresolvedCountForFirstSeenSnapshot(snapshot.id),
         firstSeenCountForSnapshot: this.countFirstSeenForSnapshot(snapshot.id),
         registryEntriesTotal: this.entriesByKey.size,
@@ -595,6 +617,19 @@ export class ClipRegistryManager {
       }
     }
     return count;
+  }
+
+  private isChangedClipContent(entry: ClipRegistryEntry, clip: ClipDiscoveryResult['clips'][number]): boolean {
+    if (
+      entry.sourceMtimeMs === undefined
+      || entry.sourceSizeBytes === undefined
+      || clip.mtimeMs === undefined
+      || clip.sizeBytes === undefined
+    ) {
+      return false;
+    }
+
+    return entry.sourceMtimeMs !== clip.mtimeMs || entry.sourceSizeBytes !== clip.sizeBytes;
   }
 
   private async releaseSnapshotsIfEligible(): Promise<void> {
