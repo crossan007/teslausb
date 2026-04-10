@@ -53,15 +53,6 @@ type DebugPayload = {
       totalEvents: number;
       oldestAgeSec: number;
     } | null;
-    transferSession: {
-      sessionId: string;
-      phase: string;
-      filesTotal: number;
-      filesCompleted: number;
-      filesFailed: number;
-      currentFilePath?: string;
-      updatedAt: number;
-    } | null;
     startupRecovery: {
       updatedAt: number;
 

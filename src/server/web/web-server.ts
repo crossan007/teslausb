@@ -115,16 +115,6 @@ export class WebServer {
       }
     });
 
-    // Current transfer session
-    this.app.get('/api/transfer-session', (_req: Request, res: Response) => {
-      try {
-        res.json(this.transferSessionView.snapshot());
-      } catch (error) {
-        logger.warn({ err: error }, 'Failed to read transfer session');
-        res.status(500).json({ error: 'Failed to read transfer session' });
-      }
-    });
-
     this.app.get('/api/transfer-queue', (_req: Request, res: Response) => {
       try {
         res.json(this.transferSessionView.getTransferQueueSnapshot());
